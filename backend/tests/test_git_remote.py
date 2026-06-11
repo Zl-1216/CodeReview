@@ -337,15 +337,47 @@ def test_list_branches_and_tags(cache_dir, tmp_path):
     entry, _ = cache.get_or_create(url)
     status = cache.get_status(entry)
     names = {b["name"] for b in status["branches"]}
-    # --single-branch only fetches the remote's HEAD branch (which the
-    # bare repo is pointing at). _make_bare_remote leaves HEAD on
-    # `feature`, so that's the only branch we should see. We also use
-    # --no-tags, so the tag set is empty. The point of this test is the
-    # plumbing: branches are surfaced through refs/remotes/origin/* and
-    # the default-branch inference works.
+    # All remote branches (both `main` and `feature`) are fetched —
+    # the old behavior used `--single-branch` which only mirrored the
+    # default branch, leaving the UI's branch picker effectively empty
+    # for repos with multiple branches. With the refspec refactor,
+    # `refs/remotes/origin/*` mirrors every branch at depth 1.
+    assert "main" in names
     assert "feature" in names
+    # --no-tags still applies on clone, so the tag set is empty.
     assert status["tags"] == []
+    # Default branch prefers the bare repo's HEAD (set by `git clone`
+    # from the source); `_make_bare_remote` leaves HEAD on `feature`,
+    # so that's the value the UI should auto-pick as the base.
     assert status["default_branch"] == "feature"
+
+
+def test_default_branch_prefers_head_over_well_known_name(cache_dir, tmp_path):
+    """When the cloned repo's HEAD is on a non-standard branch (e.g. a
+    bare repo that left HEAD pointing at 'develop' with `main` also
+    existing), the default branch should follow HEAD, not the
+    well-known-name priority list (`main` / `master` / …)."""
+    # Build a bare repo whose HEAD is on a non-standard branch
+    src = tmp_path / "src"; src.mkdir()
+    def run(args, cwd=src):
+        subprocess.run(
+            ["git", "-c", "user.name=T", "-c", "user.email=t@e.com", *args],
+            cwd=str(cwd), check=True, capture_output=True, text=True,
+        )
+    run(["init", "-q", "-b", "main"])
+    (src / "a.py").write_text("a\n"); run(["add", "."]); run(["commit", "-q", "-m", "i"])
+    run(["checkout", "-q", "-b", "develop"])
+    (src / "b.py").write_text("b\n"); run(["add", "."]); run(["commit", "-q", "-m", "d"])
+    bare = tmp_path / "bare.git"
+    subprocess.run(["git", "clone", "--bare", str(src), str(bare)], check=True, capture_output=True, text=True)
+
+    cache = git_remote.RemoteCache()
+    entry, _ = cache.get_or_create(f"file://{bare}")
+    status = cache.get_status(entry)
+    # Both branches present, but default follows the source's HEAD.
+    assert "main" in {b["name"] for b in status["branches"]}
+    assert "develop" in {b["name"] for b in status["branches"]}
+    assert status["default_branch"] == "develop"
 
 
 def test_list_empty_when_unused(cache_dir):

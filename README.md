@@ -225,7 +225,9 @@ finding 对象并立即推送给前端，不再等整段回复结束。
 
 1. **输入 URL**（+ 可选的 HTTPS 私有仓库 token）。
 2. **Connect** —— 后端执行 `git clone --depth 1 --filter=blob:none
-   --no-tags --single-branch <url>`，克隆完成后列出分支与 HEAD。
+   --no-tags --no-single-branch <url>`，把**所有远程分支**都拉到
+   `refs/remotes/origin/*`（每个分支仍是 depth=1，体积可控）。
+   克隆完成后列出全部分支与 HEAD。
 3. **选 base / head** —— 直接复用 RefPicker，从 `refs/remotes/origin/*`
    拉出分支列表。
 4. **预览 diff** —— 调 `POST /api/git/remote/{id}/diff`，复用与本地

@@ -126,8 +126,12 @@ it doesn't know about them.
 - **Remote Git cache (`backend/git_remote.py`).** A second, independent
   Git workflow that lets the user paste any `https://…` / `git@host:…`
   URL. Clones are cached at `REMOTE_GIT_CACHE_DIR/{sha1(url)[:12]}/`
-  with `--depth 1 --filter=blob:none --no-tags --single-branch` for
-  speed. All four `/api/git/remote/*` endpoints sit behind
+  with `--depth 1 --filter=blob:none --no-tags --no-single-branch` for
+  speed. `--no-single-branch` is explicit: the default for
+  `git clone --depth 1` is to fetch only the source's HEAD branch,
+  which would leave the UI's branch picker with just the default
+  branch even when the repo has dozens. Refresh fetches all heads via
+  the refspec `+refs/heads/*:refs/remotes/origin/*`. All four `/api/git/remote/*` endpoints sit behind
   `auth.require_api_key`; the URL is validated against a host
   allowlist (default: GitHub / GitLab / Bitbucket / Gitea / Gitee /
   Codeberg / SourceHut) with a post-resolution private-IP check as

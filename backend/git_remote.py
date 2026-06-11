@@ -631,7 +631,15 @@ class RemoteCache:
             try:
                 if is_initial or not (entry.path / ".git").exists():
                     # Shallow + blobless keeps disk + bandwidth small and is
-                    # all we need to compute a diff.
+                    # all we need to compute a diff. We pass
+                    # --no-single-branch explicitly: `git clone --depth 1`
+                    # otherwise defaults to single-branch behavior, which
+                    # would leave refs/remotes/origin/* with just the
+                    # remote HEAD's branch — the UI's branch picker would
+                    # then only show the default branch even when the repo
+                    # has dozens. Per-branch size is still small (one
+                    # commit + tree, blobs are not fetched) so 100+
+                    # branches is only a few MB.
                     self._run_git(
                         [
                             "clone",
@@ -639,7 +647,7 @@ class RemoteCache:
                             "1",
                             "--filter=blob:none",
                             "--no-tags",
-                            "--single-branch",
+                            "--no-single-branch",
                             clone_url,
                             str(entry.path),
                         ],
@@ -650,6 +658,13 @@ class RemoteCache:
                         ["remote", "set-url", "origin", clone_url],
                         cwd=entry.path,
                     )
+                    # Refresh: re-fetch every branch at depth 1. The
+                    # explicit refspec `+refs/heads/*:refs/remotes/origin/*`
+                    # tells git to mirror all remote heads into the local
+                    # tracking namespace (the same namespace `git clone`
+                    # populates by default). Without it `git fetch origin`
+                    # only updates the upstream of the currently checked
+                    # out branch.
                     self._run_git(
                         [
                             "fetch",
@@ -658,6 +673,7 @@ class RemoteCache:
                             "1",
                             "--filter=blob:none",
                             "origin",
+                            "+refs/heads/*:refs/remotes/origin/*",
                         ],
                         cwd=entry.path,
                     )
@@ -802,19 +818,26 @@ class RemoteCache:
             head_sha = entry.head_sha
         entry.head = head
         entry.head_sha = head_sha
-        # Default branch: look for main / master / trunk in branch list.
+        # Default branch: prefer the branch the clone's HEAD is actually
+        # pointing at (set by `git clone` from the source repo's HEAD);
+        # only fall back to the well-known-name list if that's not a
+        # real local branch (e.g. detached HEAD, or the clone's HEAD
+        # points to a ref we don't have in the local namespace).
         try:
             branches = self.list_branches(entry)
         except RemoteGitError:
             branches = []
         default_branch = ""
         names = {b["name"] for b in branches}
-        for cand in ("main", "master", "trunk", "develop"):
-            if cand in names:
-                default_branch = cand
-                break
-        if not default_branch and names:
-            default_branch = head or sorted(names)[0]
+        if head and head in names:
+            default_branch = head
+        else:
+            for cand in ("main", "master", "trunk", "develop"):
+                if cand in names:
+                    default_branch = cand
+                    break
+            if not default_branch and names:
+                default_branch = sorted(names)[0]
         entry.default_branch = default_branch
 
     # --- Public: low-level git runner ----------------------------------
