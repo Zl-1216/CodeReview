@@ -28,12 +28,33 @@ describe('api.js — API key storage', () => {
     expect(getApiKey()).toBe('')
   })
 
+  it('setApiKey trims whitespace before persisting', () => {
+    // A copy-paste of a key from a config file often leaves a trailing
+    // newline or leading whitespace. The backend's hmac.compare_digest
+    // is strict, so we strip before writing.
+    setApiKey('  secret-1  \n')
+    expect(getApiKey()).toBe('secret-1')
+  })
+
+  it('setApiKey returns a result object exposing value + storageOk', () => {
+    const r = setApiKey('abc')
+    expect(r.value).toBe('abc')
+    expect(r.storageOk).toBe(true)
+  })
+
+  it('setApiKey dispatches codereview:apikey-changed on every mutation', () => {
+    const handler = vi.fn()
+    window.addEventListener('codereview:apikey-changed', handler)
+    setApiKey('a')
+    expect(handler).toHaveBeenCalledTimes(1)
+    setApiKey('b')
+    expect(handler).toHaveBeenCalledTimes(2)
+    clearApiKey()
+    expect(handler).toHaveBeenCalledTimes(3)
+    window.removeEventListener('codereview:apikey-changed', handler)
+  })
+
   it('setApiKey / clearApiKey handle a non-string input gracefully', () => {
-    // We don't assert against the actual storage; we just verify the
-    // call doesn't throw when the storage layer is in an unusual state.
-    // (Private-mode localStorage isn't reliably mockable across
-    // vitest's environment backends, so the try/except path in
-    // setApiKey is best-effort and untested at the unit level here.)
     expect(() => setApiKey(null)).not.toThrow()
     expect(() => setApiKey(undefined)).not.toThrow()
     expect(() => clearApiKey()).not.toThrow()

@@ -104,6 +104,8 @@ describe('i18n messages', () => {
       'input.remoteConnected', 'input.remoteFetched', 'input.remoteNoBranches',
       'input.apiKeyRequired', 'input.apiKeyPlaceholder',
       'input.apiKeySave', 'input.apiKeySet', 'input.apiKeyClear',
+      'input.apiKeyShow', 'input.apiKeyHide',
+      'input.apiKeyPersistFailed', 'input.apiKeyWasInvalid',
       'refPicker.branches', 'refPicker.tags', 'refPicker.noBranches',
       'refPicker.openPicker', 'refPicker.closePicker',
       'refPicker.openPickerAria', 'refPicker.closePickerAria',

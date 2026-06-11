@@ -18,7 +18,25 @@ const UPLOAD_TIMEOUT_MS = 60_000
 // user's key in localStorage so they enter it once per browser.
 // 401 responses clear the stored key (the server has just told us the
 // key is no longer valid) so the UI can prompt the user to re-enter.
+//
+// We dispatch a `codereview:apikey-changed` CustomEvent on every
+// mutation (set, clear, or 401 auto-clear). The InputPanel component
+// listens for it so its `hasApiKey` flag stays in sync with the actual
+// storage state — without this bridge, an auto-clear leaves the UI
+// showing a green "API key saved ✓" indicator while localStorage is
+// empty, and the next request fires with no Authorization header and
+// 401s again, which is a baffling user experience.
 const API_KEY_STORAGE = 'codereview.apiKey'
+const API_KEY_EVENT = 'codereview:apikey-changed'
+
+function _notifyKeyChanged() {
+  if (typeof window === 'undefined') return
+  try {
+    window.dispatchEvent(new CustomEvent(API_KEY_EVENT))
+  } catch {
+    // SSR or sandboxed window — nothing to do
+  }
+}
 
 export function getApiKey() {
   try {
@@ -29,12 +47,30 @@ export function getApiKey() {
 }
 
 export function setApiKey(key) {
+  const trimmed = (key || '').trim()
+  let storageOk = true
   try {
-    if (key) localStorage.setItem(API_KEY_STORAGE, key)
-    else localStorage.removeItem(API_KEY_STORAGE)
-  } catch {
-    // private mode / disabled storage — best effort
+    if (trimmed) {
+      localStorage.setItem(API_KEY_STORAGE, trimmed)
+    } else {
+      localStorage.removeItem(API_KEY_STORAGE)
+    }
+  } catch (e) {
+    // Safari private mode, strict cookie/storage policies, or quota
+    // exhaustion all land here. We can't persist, so the key is only
+    // valid for this session (and even that is best-effort since
+    // getApiKey reads from storage). Surface the failure so the user
+    // sees a hint in DevTools.
+    storageOk = false
+    if (typeof console !== 'undefined') {
+      console.warn(
+        '[api] REVIEW_API_KEY could not be persisted to localStorage:',
+        e?.message || e,
+      )
+    }
   }
+  _notifyKeyChanged()
+  return { value: trimmed, storageOk }
 }
 
 export function clearApiKey() {

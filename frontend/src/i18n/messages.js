@@ -78,6 +78,10 @@ const messages = {
     'input.apiKeySave': 'Save',
     'input.apiKeySet': 'API key saved ✓',
     'input.apiKeyClear': 'Clear',
+    'input.apiKeyShow': 'Show',
+    'input.apiKeyHide': 'Hide',
+    'input.apiKeyPersistFailed': 'localStorage is unavailable (private mode?) — the key will be forgotten when you reload.',
+    'input.apiKeyWasInvalid': 'The previous key was rejected by the server (401). Enter a new one.',
 
     // ref picker
     'refPicker.branches': 'Branches',
@@ -214,6 +218,10 @@ const messages = {
     'input.apiKeySave': '保存',
     'input.apiKeySet': '已保存 API key ✓',
     'input.apiKeyClear': '清除',
+    'input.apiKeyShow': '显示',
+    'input.apiKeyHide': '隐藏',
+    'input.apiKeyPersistFailed': 'localStorage 不可用 (隐私模式?) — 刷新页面后 key 会丢失。',
+    'input.apiKeyWasInvalid': '上一次的 key 被服务器拒绝 (401)。请重新输入。',
 
     'refPicker.branches': '分支',
     'refPicker.tags': '标签',

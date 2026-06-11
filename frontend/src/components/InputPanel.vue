@@ -144,15 +144,29 @@
     <div v-else-if="mode === 'remote'" class="space-y-3">
       <div v-if="config?.requires_api_key && !hasApiKey" class="rounded-md border border-amber-200 dark:border-amber-800/50 bg-amber-50 dark:bg-amber-900/20 p-2 text-xs text-amber-700 dark:text-amber-300 space-y-1.5">
         <div>{{ t('input.apiKeyRequired') }}</div>
+        <div v-if="apiKeyLastError" class="text-red-600 dark:text-red-400">
+          {{ apiKeyLastError }}
+        </div>
+        <div v-if="!apiKeyStorageOk" class="text-red-600 dark:text-red-400">
+          {{ t('input.apiKeyPersistFailed') }}
+        </div>
         <div class="flex items-center gap-1.5">
           <input
             v-model="apiKeyInput"
-            type="password"
+            :type="showApiKey ? 'text' : 'password'"
             :placeholder="t('input.apiKeyPlaceholder')"
             autocomplete="off"
             class="flex-1 rounded-md border border-amber-300 dark:border-amber-700 bg-white dark:bg-gray-950 px-2 py-1 text-xs font-mono focus:border-amber-500 focus:outline-none"
             @keyup.enter="saveApiKey"
           />
+          <button
+            type="button"
+            class="rounded-md border border-amber-300 dark:border-amber-700 text-amber-700 dark:text-amber-300 px-2 py-1 text-xs hover:bg-amber-100 dark:hover:bg-amber-900/30"
+            :title="showApiKey ? t('input.apiKeyHide') : t('input.apiKeyShow')"
+            @click="showApiKey = !showApiKey"
+          >
+            {{ showApiKey ? t('input.apiKeyHide') : t('input.apiKeyShow') }}
+          </button>
           <button
             type="button"
             class="rounded-md bg-amber-600 hover:bg-amber-700 text-white px-2 py-1 text-xs font-medium"
@@ -314,7 +328,7 @@
 </template>
 
 <script setup>
-import { ref, computed, watch, onMounted, defineAsyncComponent } from 'vue'
+import { ref, computed, watch, onMounted, onUnmounted, defineAsyncComponent } from 'vue'
 import { api, getApiKey, setApiKey, clearApiKey } from '../utils/api.js'
 import { useConfig } from '../composables/useConfig.js'
 import { useI18n } from '../i18n/messages.js'
@@ -396,28 +410,53 @@ const remoteError = ref(null)
 // flag so the UI can switch between the "enter key" banner and the
 // "key set ✓" indicator. The actual auth header is injected by
 // `request()` in api.js on every call.
+//
+// Reactivity is bridged via the `codereview:apikey-changed` event that
+// api.js fires on every mutation (including the 401 auto-clear). The
+// previous design only re-read storage on config changes, which left
+// a window where the auto-clear had cleared localStorage but the UI
+// still showed a green "API key saved ✓" indicator — and the next
+// request would fire with no Authorization header and 401 again,
+// which is a baffling loop.
 const apiKeyInput = ref('')
 const hasApiKey = ref(false)
+const showApiKey = ref(false)
+const apiKeyStorageOk = ref(true)
+const apiKeyLastError = ref('')
 function saveApiKey() {
   if (!apiKeyInput.value) return
-  setApiKey(apiKeyInput.value)
-  hasApiKey.value = true
+  const result = setApiKey(apiKeyInput.value)
+  apiKeyStorageOk.value = result.storageOk
+  hasApiKey.value = !!result.value
   apiKeyInput.value = ''
+  apiKeyLastError.value = ''
 }
 function clearStoredApiKey() {
   clearApiKey()
   hasApiKey.value = false
   apiKeyInput.value = ''
+  apiKeyLastError.value = ''
 }
 function refreshHasApiKey() {
   hasApiKey.value = !!getApiKey()
 }
+function onApiKeyChanged() {
+  refreshHasApiKey()
+  // The event doesn't carry the value (would have to dispatch through
+  // a CustomEvent detail; we don't bother since storage IS the source
+  // of truth). On a clear, also surface the last error so the user
+  // sees why their key disappeared.
+  if (!hasApiKey.value) {
+    apiKeyLastError.value = t('input.apiKeyWasInvalid')
+  }
+}
 refreshHasApiKey()
+onMounted(() => window.addEventListener('codereview:apikey-changed', onApiKeyChanged))
+onUnmounted(() => window.removeEventListener('codereview:apikey-changed', onApiKeyChanged))
 
-// When the user has saved a key and the server still 401s, the api
-// client auto-clears the stored key. There's no event for that, so
-// re-read on every config refresh (which happens on mount and after
-// the user clicks a "retry"). A periodic check would be overkill.
+// Fallback: also refresh on config load (covers edge cases where the
+// event was missed, e.g. when this component mounts after the key
+// was already set by a sibling).
 watch(() => config.value, refreshHasApiKey)
 
 async function loadGitStatus() {
