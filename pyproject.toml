@@ -1,0 +1,23 @@
+[tool.ruff]
+# Match the codebase's existing style: short lines, 4-space indent, E5/W only.
+line-length = 100
+target-version = "py311"
+extend-exclude = ["**/__pycache__", "**/data", "**/node_modules", "**/dist"]
+
+[tool.ruff.lint]
+# Start conservative: pycodama errors + warnings + pyupgrade + simplify.
+# 'I' (isort) and 'B' (bugbear) catch real issues without being noisy.
+select = ["E", "W", "F", "I", "B", "UP", "SIM", "RUF"]
+ignore = [
+    "E501",  # line length is enforced by formatter / reviewer, not the linter
+    "B008",  # fastapi uses function calls in defaults (Query(...))
+    "RUF012",  # mutable class attributes are intentional in Pydantic models
+]
+
+[tool.ruff.lint.per-file-ignores]
+"backend/tests/*" = ["B011"]  # asserts() are fine in tests
+
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"
+line-ending = "lf"
