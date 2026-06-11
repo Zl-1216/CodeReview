@@ -611,13 +611,32 @@ class RemoteCache:
     ) -> None:
         lock = self._lock_path(entry)
         if lock.exists():
-            # Another caller is mid-clone. Wait briefly, then either
-            # find the entry usable or fail.
-            deadline = time.time() + config.REMOTE_GIT_CLONE_TIMEOUT
-            while lock.exists() and time.time() < deadline:
-                time.sleep(0.2)
-            if lock.exists():
-                raise RemoteGitError("Another clone is in progress; try again")
+            # Stale-lock detection: a previous attempt may have been
+            # killed (kill -9, OOM, server crash) before its `finally`
+            # could unlink the lock. Treat locks older than the
+            # configured clone timeout as abandoned and remove them
+            # so the next attempt can proceed. This is what the user
+            # saw as a 500 in the original report — the lock from
+            # their first failed attempt was blocking every retry.
+            try:
+                lock_age = time.time() - lock.stat().st_mtime
+            except OSError:
+                lock_age = 0.0
+            if lock_age > config.REMOTE_GIT_CLONE_TIMEOUT:
+                logger.warning(
+                    "Removing stale lock %s (age=%.0fs > timeout=%ss)",
+                    lock, lock_age, config.REMOTE_GIT_CLONE_TIMEOUT,
+                )
+                with __import__("contextlib").suppress(OSError):
+                    lock.unlink()
+            else:
+                # Another caller is mid-clone. Wait briefly, then either
+                # find the entry usable or fail.
+                deadline = time.time() + config.REMOTE_GIT_CLONE_TIMEOUT
+                while lock.exists() and time.time() < deadline:
+                    time.sleep(0.2)
+                if lock.exists():
+                    raise RemoteGitError("Another clone is in progress; try again")
         # Make sure the parent dir exists for the lock file.
         lock.parent.mkdir(parents=True, exist_ok=True)
         lock.touch()

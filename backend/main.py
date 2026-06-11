@@ -323,6 +323,17 @@ async def git_remote_clone(req: _RemoteCloneRequest):
         )
     except git_remote.RemoteGitError as e:
         raise _map_remote_error(e) from e
+    except Exception:
+        # Any non-RemoteGitError exception (e.g. PermissionError on
+        # the cache dir, OSError on a full disk) is logged with full
+        # traceback and surfaced as a 502 with a generic message —
+        # the alternative is FastAPI's default 500 page which gives
+        # the user no actionable hint.
+        logger.exception("Unexpected error in git_remote_clone")
+        raise HTTPException(
+            status_code=502,
+            detail="Internal error during clone — check the backend logs.",
+        ) from None
     status = cache.get_status(entry)
     return _remote_to_response(entry, status)
 
@@ -350,7 +361,16 @@ async def git_remote_status(remote_id: str):
     entry = cache.get(remote_id)
     if entry is None:
         raise HTTPException(status_code=404, detail="Remote not found")
-    status = cache.get_status(entry)
+    try:
+        status = cache.get_status(entry)
+    except git_remote.RemoteGitError as e:
+        raise _map_remote_error(e) from e
+    except Exception:
+        logger.exception("Unexpected error in git_remote_status(%s)", remote_id)
+        raise HTTPException(
+            status_code=502,
+            detail="Internal error fetching remote status — check the backend logs.",
+        ) from None
     return _remote_to_response(entry, status)
 
 

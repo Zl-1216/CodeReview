@@ -563,3 +563,104 @@ def test_size_cap_hides_oversized_entry(tmp_path, monkeypatch):
     # But state on disk marks it as oversized.
     state = json.loads((e1.path / git_remote._STATE_FILE).read_text())
     assert state.get("oversized") is True
+
+
+# --- Stale lock recovery --------------------------------------------------
+
+
+def test_stale_lock_is_removed_on_next_attempt(tmp_path, monkeypatch):
+    """A lock file left over from a crashed / killed previous attempt
+    should not block the next call forever. We plant a lock whose mtime
+    is older than REMOTE_GIT_CLONE_TIMEOUT, run a fresh clone, and
+    verify the lock is gone and the clone succeeded.
+
+    The previous version waited the full timeout (300s default) on
+    every retry, which the user experienced as a 5-minute hang and
+    then a confusing 'Another clone is in progress' error. This is
+    the real-world 500 the user reported (the long timeout on a stale
+    lock made the request time out at the HTTP layer, which the
+    frontend reported as 500 Internal Server Error)."""
+    base = tmp_path / "remotes"
+    monkeypatch.setattr(config, "REMOTE_GIT_CACHE_DIR", base)
+    monkeypatch.setattr(config, "REMOTE_GIT_CACHE_TTL", 3600)
+    monkeypatch.setattr(config, "REMOTE_GIT_CLONE_TIMEOUT", 60)  # tight for the test
+    monkeypatch.setattr(config, "REMOTE_GIT_ALLOWED_HOSTS", ("localhost",), raising=False)
+
+    def _parse(raw):
+        if raw.startswith("file://"):
+            p = raw[len("file://"):]
+            name = p.rstrip("/")
+            if name.endswith(".git"):
+                name = name[:-4]
+            return git_remote._ParsedURL(
+                canonical=raw, host="", path="/" + p.lstrip("/"),
+                name=name, scheme="https", ssh_user=None,
+            )
+        return git_remote._parse_url(raw)
+    monkeypatch.setattr(git_remote, "_parse_url", _parse)
+
+    cache = git_remote.RemoteCache()
+    bare = _make_bare_remote(tmp_path / "src")
+    url = f"file://{bare}"
+
+    # First clone — populates the cache.
+    entry, _ = cache.get_or_create(url)
+    lock_path = cache._lock_path(entry)
+    assert not lock_path.exists(), "lock should be cleaned up after success"
+
+    # Simulate a crashed attempt: plant a lock whose mtime is in the
+    # distant past so the stale-lock detector kicks in.
+    import os, time
+    lock_path.touch()
+    old_mtime = time.time() - (config.REMOTE_GIT_CLONE_TIMEOUT + 60)
+    os.utime(lock_path, (old_mtime, old_mtime))
+
+    # The next call should NOT hang. The stale lock is removed and
+    # the clone (well, the refresh path since the entry already exists)
+    # proceeds. We use force_refresh so the lock is re-touched and
+    # re-removed by the finally.
+    entry2, _ = cache.get_or_create(url, force_refresh=True)
+    assert entry2.id == entry.id
+    # The stale lock was cleared during the call.
+    assert not lock_path.exists()
+
+
+def test_fresh_lock_is_not_evicted(tmp_path, monkeypatch):
+    """A lock that's still inside the timeout window is real — don't
+    blow it away. The previous (stale-only) behavior has to coexist
+    with the in-progress-detection so two concurrent clones for the
+    same URL still serialize."""
+    base = tmp_path / "remotes"
+    monkeypatch.setattr(config, "REMOTE_GIT_CACHE_DIR", base)
+    monkeypatch.setattr(config, "REMOTE_GIT_CLONE_TIMEOUT", 60)
+    monkeypatch.setattr(config, "REMOTE_GIT_ALLOWED_HOSTS", ("localhost",), raising=False)
+
+    def _parse(raw):
+        if raw.startswith("file://"):
+            p = raw[len("file://"):]
+            name = p.rstrip("/")
+            if name.endswith(".git"):
+                name = name[:-4]
+            return git_remote._ParsedURL(
+                canonical=raw, host="", path="/" + p.lstrip("/"),
+                name=name, scheme="https", ssh_user=None,
+            )
+        return git_remote._parse_url(raw)
+    monkeypatch.setattr(git_remote, "_parse_url", _parse)
+
+    cache = git_remote.RemoteCache()
+    bare = _make_bare_remote(tmp_path / "src")
+    url = f"file://{bare}"
+    entry, _ = cache.get_or_create(url)
+    lock_path = cache._lock_path(entry)
+
+    # Plant a fresh lock (just-touched mtime). The next call should
+    # NOT evict it; it should wait briefly and then fail with the
+    # 'Another clone in progress' error.
+    lock_path.touch()
+    with pytest.raises(git_remote.RemoteGitError) as ei:
+        cache.get_or_create(url, force_refresh=True)
+    assert "Another clone" in str(ei.value)
+    # The original lock is still on disk (we didn't touch it).
+    assert lock_path.exists()
+    lock_path.unlink()
