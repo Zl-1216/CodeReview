@@ -142,6 +142,32 @@
     </div>
 
     <div v-else-if="mode === 'remote'" class="space-y-3">
+      <div v-if="config?.requires_api_key && !hasApiKey" class="rounded-md border border-amber-200 dark:border-amber-800/50 bg-amber-50 dark:bg-amber-900/20 p-2 text-xs text-amber-700 dark:text-amber-300 space-y-1.5">
+        <div>{{ t('input.apiKeyRequired') }}</div>
+        <div class="flex items-center gap-1.5">
+          <input
+            v-model="apiKeyInput"
+            type="password"
+            :placeholder="t('input.apiKeyPlaceholder')"
+            autocomplete="off"
+            class="flex-1 rounded-md border border-amber-300 dark:border-amber-700 bg-white dark:bg-gray-950 px-2 py-1 text-xs font-mono focus:border-amber-500 focus:outline-none"
+            @keyup.enter="saveApiKey"
+          />
+          <button
+            type="button"
+            class="rounded-md bg-amber-600 hover:bg-amber-700 text-white px-2 py-1 text-xs font-medium"
+            @click="saveApiKey"
+          >
+            {{ t('input.apiKeySave') }}
+          </button>
+        </div>
+      </div>
+      <div v-else-if="config?.requires_api_key && hasApiKey" class="flex items-center justify-between gap-2 text-xs text-emerald-700 dark:text-emerald-300 rounded-md border border-emerald-200 dark:border-emerald-800/50 bg-emerald-50 dark:bg-emerald-900/20 px-2 py-1">
+        <span>{{ t('input.apiKeySet') }}</span>
+        <button type="button" class="text-emerald-700 dark:text-emerald-300 hover:text-red-600 dark:hover:text-red-400" @click="clearStoredApiKey">
+          {{ t('input.apiKeyClear') }}
+        </button>
+      </div>
       <div v-if="!remoteStatus" class="space-y-2">
         <input
           v-model="remoteUrl"
@@ -289,7 +315,7 @@
 
 <script setup>
 import { ref, computed, watch, onMounted, defineAsyncComponent } from 'vue'
-import { api } from '../utils/api.js'
+import { api, getApiKey, setApiKey, clearApiKey } from '../utils/api.js'
 import { useConfig } from '../composables/useConfig.js'
 import { useI18n } from '../i18n/messages.js'
 import { categoryLabel } from '../utils/format.js'
@@ -362,6 +388,37 @@ const remoteBranches = ref([])
 const remoteTags = ref([])
 const connecting = ref(false)
 const remoteError = ref(null)
+
+// --- API key (Review/Upload/Remote writes) ------------------------------
+// When the server is configured with REVIEW_API_KEY, every write needs
+// a Bearer token. The key is stored in localStorage by utils/api.js
+// (getApiKey/setApiKey/clearApiKey); here we just expose a reactive
+// flag so the UI can switch between the "enter key" banner and the
+// "key set ✓" indicator. The actual auth header is injected by
+// `request()` in api.js on every call.
+const apiKeyInput = ref('')
+const hasApiKey = ref(false)
+function saveApiKey() {
+  if (!apiKeyInput.value) return
+  setApiKey(apiKeyInput.value)
+  hasApiKey.value = true
+  apiKeyInput.value = ''
+}
+function clearStoredApiKey() {
+  clearApiKey()
+  hasApiKey.value = false
+  apiKeyInput.value = ''
+}
+function refreshHasApiKey() {
+  hasApiKey.value = !!getApiKey()
+}
+refreshHasApiKey()
+
+// When the user has saved a key and the server still 401s, the api
+// client auto-clears the stored key. There's no event for that, so
+// re-read on every config refresh (which happens on mount and after
+// the user clicks a "retry"). A periodic check would be overkill.
+watch(() => config.value, refreshHasApiKey)
 
 async function loadGitStatus() {
   if (!config.value?.git_enabled) return

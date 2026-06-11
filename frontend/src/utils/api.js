@@ -11,6 +11,36 @@ const DEFAULT_TIMEOUT_MS = 30_000
 const SUBMIT_TIMEOUT_MS = 30_000
 const UPLOAD_TIMEOUT_MS = 60_000
 
+// --- API key handling -----------------------------------------------------
+// When the server is configured with REVIEW_API_KEY, every write
+// endpoint (review, upload, cancel, rerun, /api/git/remote/*) requires
+// a matching `Authorization: Bearer <key>` header. We persist the
+// user's key in localStorage so they enter it once per browser.
+// 401 responses clear the stored key (the server has just told us the
+// key is no longer valid) so the UI can prompt the user to re-enter.
+const API_KEY_STORAGE = 'codereview.apiKey'
+
+export function getApiKey() {
+  try {
+    return localStorage.getItem(API_KEY_STORAGE) || ''
+  } catch {
+    return ''
+  }
+}
+
+export function setApiKey(key) {
+  try {
+    if (key) localStorage.setItem(API_KEY_STORAGE, key)
+    else localStorage.removeItem(API_KEY_STORAGE)
+  } catch {
+    // private mode / disabled storage — best effort
+  }
+}
+
+export function clearApiKey() {
+  setApiKey('')
+}
+
 function timeoutSignal(ms, external) {
   // Combine an external AbortSignal (so callers can cancel) with our
   // own timeout. Either side aborting kills the fetch.
@@ -31,9 +61,17 @@ function timeoutSignal(ms, external) {
 
 async function request(path, { timeoutMs = DEFAULT_TIMEOUT_MS, ...options } = {}) {
   const signal = timeoutSignal(timeoutMs, options.signal)
+  // Build headers. We don't blindly spread the caller's headers because
+  // we want to make sure Content-Type and Authorization are always set
+  // (or not) on our terms. The caller can still override via
+  // `options.headers`, which we apply last.
+  const headers = { 'Content-Type': 'application/json' }
+  const apiKey = getApiKey()
+  if (apiKey) headers['Authorization'] = `Bearer ${apiKey}`
+  if (options.headers) Object.assign(headers, options.headers)
   const resp = await fetch(BASE + path, {
-    headers: { 'Content-Type': 'application/json' },
     ...options,
+    headers,
     signal,
   })
   if (!resp.ok) {
@@ -44,6 +82,11 @@ async function request(path, { timeoutMs = DEFAULT_TIMEOUT_MS, ...options } = {}
     } catch {
       // ignore — fall back to status text
     }
+    // 401 = the stored key is stale. Clear it so the UI prompts the
+    // user to re-enter on next render. We don't clear on 403 because
+    // that could also be a permission policy (rate limit) rather than
+    // an auth issue.
+    if (resp.status === 401 && apiKey) clearApiKey()
     throw new Error(detail)
   }
   if (resp.status === 204) return null

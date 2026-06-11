@@ -72,6 +72,13 @@ const messages = {
     'input.remoteFetched': 'Last fetched: {when}',
     'input.remoteNoBranches': 'No branches fetched yet',
 
+    // API key (REVIEW_API_KEY)
+    'input.apiKeyRequired': 'This server requires an API key (REVIEW_API_KEY). Enter it once — it will be remembered in this browser.',
+    'input.apiKeyPlaceholder': 'Paste your API key…',
+    'input.apiKeySave': 'Save',
+    'input.apiKeySet': 'API key saved ✓',
+    'input.apiKeyClear': 'Clear',
+
     // ref picker
     'refPicker.branches': 'Branches',
     'refPicker.tags': 'Tags',
@@ -201,6 +208,12 @@ const messages = {
     'input.remoteConnected': '已连接 {name}',
     'input.remoteFetched': '上次拉取: {when}',
     'input.remoteNoBranches': '尚未拉取任何分支',
+
+    'input.apiKeyRequired': '该服务器要求 API key (REVIEW_API_KEY)。输入一次,本浏览器会记住。',
+    'input.apiKeyPlaceholder': '粘贴 API key…',
+    'input.apiKeySave': '保存',
+    'input.apiKeySet': '已保存 API key ✓',
+    'input.apiKeyClear': '清除',
 
     'refPicker.branches': '分支',
     'refPicker.tags': '标签',

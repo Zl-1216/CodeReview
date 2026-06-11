@@ -148,6 +148,12 @@ async def public_config():
         "git_enabled": bool(config.REPO_PATH),
         "git_repo_path": config.REPO_PATH or None,
         "remote_git_enabled": bool(config.REVIEW_GIT_REMOTE_ENABLED),
+        # True iff the server is configured with REVIEW_API_KEY. When
+        # true, every write endpoint (review, upload, cancel, rerun,
+        # the new /api/git/remote/* set) requires a Bearer token; the
+        # frontend surfaces an input for the user to enter it and
+        # persists it in localStorage.
+        "requires_api_key": bool(config.REVIEW_API_KEY),
     }
 
 
