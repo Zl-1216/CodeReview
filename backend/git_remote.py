@@ -70,6 +70,17 @@ class RemoteGitTimeoutError(RemoteGitError):
     """Clone or fetch exceeded REMOTE_GIT_CLONE_TIMEOUT."""
 
 
+class RemoteGitNetworkError(RemoteGitError):
+    """The host is reachable in DNS but the TLS / TCP handshake failed.
+
+    Surfaced as HTTP 502 (upstream connectivity issue). The frontend
+    hint asks the user to check whether the backend host can actually
+    reach the remote (corporate proxy, sandboxed container, etc.) —
+    `git`'s GnuTLS `-110` error is one of the more cryptic messages,
+    so we wrap it with an actionable prefix.
+    """
+
+
 # --- URL parsing / validation ----------------------------------------------
 
 
@@ -673,6 +684,28 @@ class RemoteCache:
             raise RemoteGitNotFoundError(msg) from exc
         if "timed out" in low or "timeout" in low:
             raise RemoteGitTimeoutError(msg) from exc
+        # Network-layer failures. These are all the same shape from the
+        # UI's perspective: the host is DNS-resolvable but the TLS / TCP
+        # handshake isn't completing. Common culprits: corporate proxy
+        # blocking 443, sandboxed container with no internet egress, an
+        # expired ca-certificates bundle, or a transparent MITM that
+        # mangles the handshake (which is what produces the GnuTLS
+        # "non-properly terminated" message in the user's report).
+        network_markers = (
+            "gnutls", "non-properly terminated", "connection reset",
+            "connection refused", "connection timed out",
+            "could not resolve host", "network is unreachable",
+            "ssl routines", "tlsv1 alert", "proxy", "errno 110",
+        )
+        if any(m in low for m in network_markers):
+            hint = (
+                "Network error reaching the remote. If the host is on "
+                "the allowlist but this fails, the backend host may be "
+                "behind a firewall / proxy / sandbox without HTTPS "
+                "egress. Try setting GIT_HTTPS_PROXY=<your-proxy> before "
+                "starting the backend, or use an SSH URL."
+            )
+            raise RemoteGitNetworkError(f"{msg} — {hint}") from exc
         # Otherwise: re-raise the same exception so the caller still sees
         # the failure. The warning is purely diagnostic.
         logger.warning("git remote op failed for %s: %s", masked_url, msg)

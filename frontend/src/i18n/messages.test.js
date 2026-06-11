@@ -107,6 +107,7 @@ describe('i18n messages', () => {
       'input.apiKeySave', 'input.apiKeySet', 'input.apiKeyClear',
       'input.apiKeyShow', 'input.apiKeyHide',
       'input.apiKeyPersistFailed', 'input.apiKeyWasInvalid',
+      'input.remoteNetworkErrorHint',
       'refPicker.branches', 'refPicker.tags', 'refPicker.noBranches',
       'refPicker.openPicker', 'refPicker.closePicker',
       'refPicker.openPickerAria', 'refPicker.closePickerAria',

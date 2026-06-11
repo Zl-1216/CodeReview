@@ -201,8 +201,9 @@
           autocomplete="off"
           class="w-full rounded-md border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-950 px-3 py-2 text-sm font-mono focus:border-indigo-500 focus:outline-none"
         />
-        <div v-if="remoteError" class="rounded-md border border-red-200 dark:border-red-800/50 bg-red-50 dark:bg-red-900/20 p-2 text-xs text-red-700 dark:text-red-300">
-          {{ remoteError }}
+        <div v-if="remoteError" class="rounded-md border border-red-200 dark:border-red-800/50 bg-red-50 dark:bg-red-900/20 p-2 text-xs text-red-700 dark:text-red-300 space-y-1">
+          <div>{{ remoteError }}</div>
+          <div v-if="isNetworkError">{{ t('input.remoteNetworkErrorHint') }}</div>
         </div>
         <button
           type="button"
@@ -540,6 +541,14 @@ watch(focuses, (val) => {
 
 const canPreview = computed(() => gitBase.value.trim() && gitHead.value.trim())
 const canConnect = computed(() => remoteUrl.value.trim().length > 5)
+// True when the last /api/git/remote/clone failure looks like a network
+// problem (TLS / proxy / connection refused) rather than a logical
+// error. The backend now annotates these with the '— Network error…'
+// suffix via RemoteGitNetworkError, so we just look for that prefix.
+const isNetworkError = computed(() =>
+  typeof remoteError.value === 'string' &&
+  /Network error|gnutls|non-properly terminated|timed out|connection (refused|reset|timed out)|proxy/i.test(remoteError.value)
+)
 const canSubmit = computed(() => {
   if (mode.value === 'snippet') return snippetContent.value.trim().length > 0
   if (mode.value === 'diff') return diffText.value.trim().length > 0 && parsedFiles.value.length > 0

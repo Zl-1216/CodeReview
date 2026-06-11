@@ -92,6 +92,10 @@ const messages = {
     'input.apiKeyHide': 'Hide',
     'input.apiKeyPersistFailed': 'localStorage is unavailable (private mode?) — the key will be forgotten when you reload.',
     'input.apiKeyWasInvalid': 'The previous value was rejected (HTTP 401). Double-check it matches the server\'s REVIEW_API_KEY exactly — it is NOT the Anthropic / OpenAI LLM key.',
+    // Surfaced when the backend's git clone can't reach the remote
+    // (firewall, proxy, sandbox). The backend annotates the message
+    // with this prefix so the UI can offer a one-click recovery.
+    'input.remoteNetworkErrorHint': 'Hint: the backend host may be behind a firewall / proxy / sandbox without HTTPS egress. Set GIT_HTTPS_PROXY and restart the backend, or use an SSH URL.',
 
     // ref picker
     'refPicker.branches': 'Branches',
@@ -233,6 +237,7 @@ const messages = {
     'input.apiKeyHide': '隐藏',
     'input.apiKeyPersistFailed': 'localStorage 不可用 (隐私模式?) — 刷新页面后 key 会丢失。',
     'input.apiKeyWasInvalid': '上一次的 key 被服务器拒绝 (HTTP 401)。请确认它和后端的 REVIEW_API_KEY 完全一致 —— 注意它不是 Anthropic / OpenAI 的 LLM key。',
+    'input.remoteNetworkErrorHint': '提示：后端机器可能处于防火墙 / 代理 / 沙箱环境,无法访问外网 HTTPS。可以设置 GIT_HTTPS_PROXY 重启后端,或改用 SSH URL。',
 
     'refPicker.branches': '分支',
     'refPicker.tags': '标签',

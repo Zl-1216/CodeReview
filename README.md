@@ -259,6 +259,41 @@ finding 对象并立即推送给前端，不再等整段回复结束。
 * `REMOTE_GIT_MAX_SIZE_MB` —— 单仓库目录超过此值会被标记为
   `oversized` 并从内存索引中隐藏（磁盘保留供人工排查）。
 
+### 远程克隆的网络 / 代理配置
+
+`git` 子进程从后端进程继承网络栈。如果后端所在机器无法直接访问
+`github.com` 等公网（如企业内网、沙箱环境、无 internet 出口的容器），
+`/api/git/remote/clone` 会失败，错误类似：
+
+```
+fatal: unable to access 'https://github.com/.../':
+GnuTLS recv error (-110): The TLS connection was non-properly terminated.
+```
+
+后端把这类错误归到 `RemoteGitNetworkError`（HTTP 502），UI 在错误下方
+显示提示「可设置 `GIT_HTTPS_PROXY` 重启后端,或改用 SSH URL」。两个
+常见修复：
+
+1. **走 HTTP / SOCKS 代理** —— `git` 支持 `http.proxy` / `https.proxy`
+   设置。最简单的方式是带 env 启动：
+
+   ```bash
+   GIT_HTTPS_PROXY=http://proxy.example.com:3128 \
+     python3 -m uvicorn main:app --host 0.0.0.0 --port 8770
+   ```
+
+   （SOCKS 代理需先装 `git-remote-socks`，写法是
+   `GIT_SOCKS5_PROXY=socks5://...`。）
+
+2. **改用 SSH URL** —— `git@github.com:owner/repo.git` 走 22 端口，
+   部分内网只封 443 不封 22。后端机器上需要有相应 SSH key（默认
+   `~/.ssh/id_rsa` 或 `GIT_SSH_COMMAND` 指定）。URL 白名单已经允许
+   `git@host:path` 形式。
+
+如果只是临时想测功能、不想跑真实 git clone，pytest 自带 file:// 后门
+（`backend/tests/test_git_remote.py` 用 `_parse_url` 注入）；e2e 脚本
+`scripts/verify_remote.sh` 默认走 no-clone smoke check。
+
 ## 测试
 
 ```bash

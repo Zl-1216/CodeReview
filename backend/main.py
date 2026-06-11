@@ -300,6 +300,11 @@ def _map_remote_error(e: git_remote.RemoteGitError) -> HTTPException:
         return HTTPException(status_code=404, detail=str(e))
     if isinstance(e, git_remote.RemoteGitTimeoutError):
         return HTTPException(status_code=504, detail=str(e))
+    if isinstance(e, git_remote.RemoteGitNetworkError):
+        # Network / TLS / proxy problems: upstream connectivity, not a
+        # logical error in our request. The frontend surfaces a hint
+        # about proxy / firewall.
+        return HTTPException(status_code=502, detail=str(e))
     return HTTPException(status_code=502, detail=str(e))
 
 

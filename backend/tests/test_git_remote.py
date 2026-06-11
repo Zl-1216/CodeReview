@@ -145,6 +145,63 @@ def test_parse_rejects_loopback(monkeypatch):
         git_remote._parse_url("https://localhost/o/r")
 
 
+# --- _classify_and_raise: error subclass mapping --------------------------
+
+
+def test_classify_network_error_gnutls():
+    """The exact 'GnuTLS recv error (-110)' message that users see when
+    the backend host is behind a firewall / proxy / sandbox without
+    HTTPS egress must be classified as a network error so the UI can
+    show a hint about the proxy / SSH URL escape hatch."""
+    base = git_remote.RemoteGitError(
+        "fatal: unable to access 'https://github.com/x/y/': "
+        "GnuTLS recv error (-110): The TLS connection was non-properly terminated."
+    )
+    with pytest.raises(git_remote.RemoteGitNetworkError) as ei:
+        git_remote.RemoteCache._classify_and_raise(base, masked_url="…")
+    # The hint should mention the proxy env var the user can set.
+    assert "GIT_HTTPS_PROXY" in str(ei.value) or "proxy" in str(ei.value).lower()
+
+
+def test_classify_network_error_connection_refused():
+    base = git_remote.RemoteGitError("fatal: unable to access …: Connection refused")
+    with pytest.raises(git_remote.RemoteGitNetworkError):
+        git_remote.RemoteCache._classify_and_raise(base, masked_url="…")
+
+
+def test_classify_network_error_proxy_explicit():
+    base = git_remote.RemoteGitError("fatal: unable to access …: Could not resolve proxy host")
+    with pytest.raises(git_remote.RemoteGitNetworkError):
+        git_remote.RemoteCache._classify_and_raise(base, masked_url="…")
+
+
+def test_classify_timeout_still_timeout():
+    base = git_remote.RemoteGitError("fatal: unable to access …: Operation timed out")
+    with pytest.raises(git_remote.RemoteGitTimeoutError):
+        git_remote.RemoteCache._classify_and_raise(base, masked_url="…")
+
+
+def test_classify_auth_still_auth():
+    base = git_remote.RemoteGitError("fatal: Authentication failed for 'https://…'")
+    with pytest.raises(git_remote.RemoteGitAuthError):
+        git_remote.RemoteCache._classify_and_raise(base, masked_url="…")
+
+
+def test_classify_not_found_still_not_found():
+    base = git_remote.RemoteGitError("remote: Repository not found.")
+    with pytest.raises(git_remote.RemoteGitNotFoundError):
+        git_remote.RemoteCache._classify_and_raise(base, masked_url="…")
+
+
+def test_classify_unknown_reraises_original():
+    """An unrecognized error message is re-raised as the same RemoteGitError
+    — not silently swallowed — so the caller still sees a failure."""
+    base = git_remote.RemoteGitError("some weird thing we don't recognize")
+    with pytest.raises(git_remote.RemoteGitError) as ei:
+        git_remote.RemoteCache._classify_and_raise(base, masked_url="…")
+    assert str(ei.value) == "some weird thing we don't recognize"
+
+
 # --- _inject_token --------------------------------------------------------
 
 
