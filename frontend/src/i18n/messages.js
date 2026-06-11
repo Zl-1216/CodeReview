@@ -72,16 +72,26 @@ const messages = {
     'input.remoteFetched': 'Last fetched: {when}',
     'input.remoteNoBranches': 'No branches fetched yet',
 
-    // API key (REVIEW_API_KEY)
-    'input.apiKeyRequired': 'This server requires an API key (REVIEW_API_KEY). Enter it once — it will be remembered in this browser.',
-    'input.apiKeyPlaceholder': 'Paste your API key…',
+    // API key (REVIEW_API_KEY — NOT the LLM key)
+    // The server exposes a Bearer-token check (env var REVIEW_API_KEY)
+    // that gates every write endpoint. That token is set on the SERVER
+    // (e.g. by your devops / docker-compose), and users paste the same
+    // value into this UI to authenticate their browser session. It is
+    // completely separate from the LLM API key (ANTHROPIC_API_KEY),
+    // which the server reads from its own env and the frontend never
+    // sees. The wording is intentionally explicit about this so users
+    // don't paste their Anthropic/OpenAI key here and wonder why the
+    // server keeps 401-ing.
+    'input.apiKeyRequired': 'This server requires an API key to call its write endpoints — the value of REVIEW_API_KEY set on the server. This is NOT the LLM (Anthropic / OpenAI) key; that one lives on the server as ANTHROPIC_API_KEY and the frontend never needs to know it.',
+    'input.apiKeyWhereToFind': 'Where to find it: check the backend startup command, docker-compose.yml, or ask the operator who started the service.',
+    'input.apiKeyPlaceholder': 'Paste REVIEW_API_KEY value…',
     'input.apiKeySave': 'Save',
     'input.apiKeySet': 'API key saved ✓',
     'input.apiKeyClear': 'Clear',
     'input.apiKeyShow': 'Show',
     'input.apiKeyHide': 'Hide',
     'input.apiKeyPersistFailed': 'localStorage is unavailable (private mode?) — the key will be forgotten when you reload.',
-    'input.apiKeyWasInvalid': 'The previous key was rejected by the server (401). Enter a new one.',
+    'input.apiKeyWasInvalid': 'The previous value was rejected (HTTP 401). Double-check it matches the server\'s REVIEW_API_KEY exactly — it is NOT the Anthropic / OpenAI LLM key.',
 
     // ref picker
     'refPicker.branches': 'Branches',
@@ -213,15 +223,16 @@ const messages = {
     'input.remoteFetched': '上次拉取: {when}',
     'input.remoteNoBranches': '尚未拉取任何分支',
 
-    'input.apiKeyRequired': '该服务器要求 API key (REVIEW_API_KEY)。输入一次,本浏览器会记住。',
-    'input.apiKeyPlaceholder': '粘贴 API key…',
+    'input.apiKeyRequired': '该服务器要求 API key 用来调用写接口 —— 即服务端环境变量 REVIEW_API_KEY 的值。注意：这不是 LLM (Anthropic / OpenAI) 的 key,那个在后端用 ANTHROPIC_API_KEY 配置,前端不需要也不应该拿到。',
+    'input.apiKeyWhereToFind': '在哪里找：看后端启动命令、docker-compose.yml,或问部署服务的人。',
+    'input.apiKeyPlaceholder': '粘贴 REVIEW_API_KEY 的值…',
     'input.apiKeySave': '保存',
     'input.apiKeySet': '已保存 API key ✓',
     'input.apiKeyClear': '清除',
     'input.apiKeyShow': '显示',
     'input.apiKeyHide': '隐藏',
     'input.apiKeyPersistFailed': 'localStorage 不可用 (隐私模式?) — 刷新页面后 key 会丢失。',
-    'input.apiKeyWasInvalid': '上一次的 key 被服务器拒绝 (401)。请重新输入。',
+    'input.apiKeyWasInvalid': '上一次的 key 被服务器拒绝 (HTTP 401)。请确认它和后端的 REVIEW_API_KEY 完全一致 —— 注意它不是 Anthropic / OpenAI 的 LLM key。',
 
     'refPicker.branches': '分支',
     'refPicker.tags': '标签',

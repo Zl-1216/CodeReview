@@ -144,6 +144,11 @@
     <div v-else-if="mode === 'remote'" class="space-y-3">
       <div v-if="config?.requires_api_key && !hasApiKey" class="rounded-md border border-amber-200 dark:border-amber-800/50 bg-amber-50 dark:bg-amber-900/20 p-2 text-xs text-amber-700 dark:text-amber-300 space-y-1.5">
         <div>{{ t('input.apiKeyRequired') }}</div>
+        <details class="text-amber-700/80 dark:text-amber-300/80">
+          <summary class="cursor-pointer select-none hover:text-amber-900 dark:hover:text-amber-100">
+            {{ t('input.apiKeyWhereToFind') }}
+          </summary>
+        </details>
         <div v-if="apiKeyLastError" class="text-red-600 dark:text-red-400">
           {{ apiKeyLastError }}
         </div>
