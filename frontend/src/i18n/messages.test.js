@@ -126,7 +126,7 @@ describe('i18n messages', () => {
       'review.allFiles', 'review.errorBanner',
       'finding.jumpTo', 'finding.jumpToAria',
       'finding.copy', 'finding.copied', 'finding.copyAria',
-      'finding.suggestedFix',
+      'finding.suggestedFix', 'finding.expand', 'finding.collapse',
       'history.title', 'history.total', 'history.empty',
       'history.fileCount', 'history.findingCount', 'history.deleteAria',
       'summary.title', 'summary.statusIdle', 'summary.statusConnecting',

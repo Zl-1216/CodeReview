@@ -155,6 +155,8 @@ const messages = {
     'finding.copied': 'Copied',
     'finding.copyAria': 'Copy code snippet',
     'finding.suggestedFix': 'Suggested fix',
+    'finding.expand': 'Show detail',
+    'finding.collapse': 'Hide detail',
 
     // history
     'history.title': 'History',
@@ -311,6 +313,8 @@ const messages = {
     'finding.copied': '已复制',
     'finding.copyAria': '复制代码片段',
     'finding.suggestedFix': '建议修复',
+    'finding.expand': '展开详情',
+    'finding.collapse': '收起详情',
 
     'history.title': '历史记录',
     'history.total': '{n} 条历史评审',
