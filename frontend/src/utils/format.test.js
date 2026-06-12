@@ -1,6 +1,8 @@
 import { describe, it, expect } from 'vitest'
 import {
   severityRank,
+  fileStatusBadge,
+  fileStatusLabel,
   formatDateTime,
   formatRelative,
   formatBytes,
@@ -125,5 +127,61 @@ describe('order constants', () => {
   })
   it('category order starts with bug and security', () => {
     expect(CATEGORY_ORDER.slice(0, 2)).toEqual(['bug', 'security'])
+  })
+})
+
+
+// --- File status badge (I5) -----------------------------------------
+
+describe('format.js — file status badge', () => {
+  it('returns a class + icon for every known status', () => {
+    for (const s of ['added', 'modified', 'deleted', 'renamed', 'unchanged']) {
+      const b = fileStatusBadge(s)
+      expect(b.icon).toBeTruthy()
+      expect(b.cls).toContain('inline-flex')
+    }
+  })
+
+  it('falls back to the unchanged style for unknown / missing status', () => {
+    const unknown = fileStatusBadge('mystery')
+    const missing = fileStatusBadge(undefined)
+    const ref = fileStatusBadge('unchanged')
+    expect(unknown.cls).toBe(ref.cls)
+    expect(missing.cls).toBe(ref.cls)
+  })
+
+  it('color-codes added/modified/deleted distinctly', () => {
+    // Smoke check that the three change statuses each get their own
+    // Tailwind color class — a regression in the colour table would
+    // be visible at a glance.
+    const added = fileStatusBadge('added')
+    const modified = fileStatusBadge('modified')
+    const deleted = fileStatusBadge('deleted')
+    expect(added.cls).toContain('emerald')
+    expect(modified.cls).toContain('sky')
+    expect(deleted.cls).toContain('rose')
+    // And they don't all share the same class.
+    expect(added.cls).not.toBe(modified.cls)
+    expect(modified.cls).not.toBe(deleted.cls)
+  })
+})
+
+describe('format.js — fileStatusLabel', () => {
+  it('returns a localised label for a known status', () => {
+    // The exact string is locale-table-owned; just assert it's
+    // *some* non-empty, non-key string and changes when the locale
+    // changes.
+    const en = fileStatusLabel('added', 'en')
+    const zh = fileStatusLabel('added', 'zh')
+    expect(en).toBeTruthy()
+    expect(zh).toBeTruthy()
+    expect(en).not.toBe(zh)
+    expect(en).not.toBe('added')  // not the raw id
+  })
+
+  it('returns the raw id when the i18n table is missing the key', () => {
+    // Useful so the UI shows "refactor" or whatever custom id the
+    // engine might invent later, instead of `files.statusRefactor`.
+    expect(fileStatusLabel('totally_unknown', 'en')).toBe('totally_unknown')
   })
 })

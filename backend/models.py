@@ -20,6 +20,11 @@ class CodeFile(BaseModel):
     `content` is the post-change content. When `original_content` is supplied
     the reviewer can reason about the diff. Either may be empty for a brand
     new file or a deletion, respectively.
+
+    For per-file change visualisation the parser also populates `status`
+    (one of `added` / `modified` / `deleted` / `renamed` / `unchanged`)
+    and `diff` (a structured per-line change list consumed by the
+    frontend's diff viewer).
     """
 
     model_config = ConfigDict(
@@ -30,6 +35,13 @@ class CodeFile(BaseModel):
                 "original_content": "def add(a, b):\n    pass\n",
                 "language": "python",
                 "line_map": {"2": 2},
+                "status": "modified",
+                "added_count": 1,
+                "removed_count": 0,
+                "diff": [
+                    {"type": "context", "old_line": 1, "new_line": 1, "text": "def add(a, b):"},
+                    {"type": "context", "old_line": 2, "new_line": 2, "text": "    return a + b"},
+                ],
             }
         }
     )
@@ -50,6 +62,54 @@ class CodeFile(BaseModel):
     line_map: dict[int, int] = Field(
         default_factory=dict,
         description="Maps a new-file line number to its original line number (if any).",
+    )
+    # ---- I5: change visualisation ----------------------------------------
+    status: str = Field(
+        default="unchanged",
+        description="Change classification: 'added' (new file), 'modified' (content changed), 'deleted' (file removed), 'renamed' (path changed, content same or changed), 'unchanged' (no net change).",
+        examples=["modified"],
+    )
+    added_count: int = Field(
+        default=0,
+        description="Number of added lines in the diff (0 for added files means a totally empty file; 0 for unchanged).",
+    )
+    removed_count: int = Field(
+        default=0,
+        description="Number of removed lines in the diff (0 for deleted files means an empty original; 0 for unchanged).",
+    )
+    diff: list["DiffLine"] = Field(
+        default_factory=list,
+        description="Structured per-line diff for the diff viewer. Each entry has `type` (added/removed/context), `text`, and the new/old line numbers where applicable. Empty when the file is `unchanged`.",
+    )
+
+
+class DiffLine(BaseModel):
+    """A single line in a structured per-line diff.
+
+    `type` is one of:
+      * `added`    — line present in the new file but not the old.
+      * `removed`  — line present in the old file but not the new.
+      * `context`  — line present in both (surrounding unchanged context).
+
+    `old_line` / `new_line` are 1-indexed within the file. Exactly one
+    is `null` for `added` / `removed` lines; both are set for `context`.
+    """
+
+    type: Literal["added", "removed", "context"] = Field(
+        ...,
+        description="Kind of change for this line.",
+    )
+    old_line: int | None = Field(
+        default=None,
+        description="Old (pre-change) line number, or null for an added line.",
+    )
+    new_line: int | None = Field(
+        default=None,
+        description="New (post-change) line number, or null for a removed line.",
+    )
+    text: str = Field(
+        default="",
+        description="The line text (without the leading +/-/space marker).",
     )
 
 
@@ -241,3 +301,10 @@ class ReviewDiffRequest(BaseModel):
 
 class ReviewDiffResponse(BaseModel):
     files: list[CodeFile] = Field(..., description="Files reconstructed from the diff.")
+
+
+# Resolve the forward reference to DiffLine. We declared `diff:
+# list["DiffLine"]` inside CodeFile before DiffLine was defined; Pydantic
+# needs this rebuild() call to wire the reference at class-definition
+# time.
+CodeFile.model_rebuild()

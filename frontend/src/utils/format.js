@@ -84,3 +84,44 @@ export function formatDuration(ms) {
   if (ms < 1000) return `${ms}ms`
   return `${(ms / 1000).toFixed(1)}s`
 }
+
+// File change-status metadata. Drives the colour/icon in the file
+// overview and the per-file badges in ReviewPanel. The label is
+// fetched via the i18n table (files.statusAdded / Modified / ...)
+// so the locale switches automatically; this table only carries
+// the visual / ordering data.
+export const FILE_STATUS_META = {
+  added: { color: 'emerald', icon: '+', weight: 0, isChange: true },
+  modified: { color: 'sky', icon: '~', weight: 1, isChange: true },
+  deleted: { color: 'rose', icon: '−', weight: 2, isChange: true },
+  renamed: { color: 'amber', icon: '→', weight: 3, isChange: true },
+  unchanged: { color: 'gray', icon: '·', weight: 4, isChange: false },
+}
+
+export const FILE_STATUS_ORDER = ['added', 'modified', 'renamed', 'deleted', 'unchanged']
+
+// Returns the badge props (Tailwind class + a11y label) for a file
+// status. `meta` may be missing for legacy rows (status field was
+// added later) — fall back to a neutral gray "unchanged" so the UI
+// doesn't render an unstyled chip.
+export function fileStatusBadge(status) {
+  const m = FILE_STATUS_META[status] || FILE_STATUS_META.unchanged
+  const clsByColor = {
+    emerald: 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300 border-emerald-200 dark:border-emerald-800/50',
+    sky: 'bg-sky-100 text-sky-700 dark:bg-sky-900/30 dark:text-sky-300 border-sky-200 dark:border-sky-800/50',
+    rose: 'bg-rose-100 text-rose-700 dark:bg-rose-900/30 dark:text-rose-300 border-rose-200 dark:border-rose-800/50',
+    amber: 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300 border-amber-200 dark:border-amber-800/50',
+    gray: 'bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-300 border-gray-200 dark:border-gray-700',
+  }
+  return {
+    icon: m.icon,
+    cls: `inline-flex items-center justify-center w-5 h-5 rounded font-mono text-xs font-semibold border ${clsByColor[m.color] || clsByColor.gray}`,
+  }
+}
+
+// Locale-aware status label; falls back to the raw id.
+export function fileStatusLabel(status, locale) {
+  if (!status) return ''
+  const out = translate(locale, `files.status${status[0].toUpperCase()}${status.slice(1)}`)
+  return out.startsWith('files.status') ? status : out
+}

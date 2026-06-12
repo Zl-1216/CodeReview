@@ -108,6 +108,13 @@ describe('i18n messages', () => {
       'input.apiKeyShow', 'input.apiKeyHide',
       'input.apiKeyPersistFailed', 'input.apiKeyWasInvalid',
       'input.remoteNetworkErrorHint',
+
+      'files.title', 'files.summary',
+      'files.filterAll', 'files.filterAdded', 'files.filterModified', 'files.filterDeleted',
+      'files.statusAdded', 'files.statusModified', 'files.statusDeleted',
+      'files.statusRenamed', 'files.statusUnchanged',
+      'files.countBadge', 'files.findingsFor', 'files.noFindings',
+      'files.legendAdded', 'files.legendRemoved', 'files.legendContext',
       'refPicker.branches', 'refPicker.tags', 'refPicker.noBranches',
       'refPicker.openPicker', 'refPicker.closePicker',
       'refPicker.openPickerAria', 'refPicker.closePickerAria',
