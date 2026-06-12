@@ -387,7 +387,23 @@ async def git_remote_diff(remote_id: str, req: _RemoteRemoteDiffRequest):
     if entry is None:
         raise HTTPException(status_code=404, detail="Remote not found; please reconnect")
     try:
-        result = git_diff.diff_refs(req.base, req.head, req.path, cwd=entry.path)
+        # refs_prefix="origin/" because the remote cache's working tree
+        # only has refs/remotes/origin/* (no local branches), and the
+        # UI's RefPicker sends short names like `main` or
+        # `feature/remote-git`. The local-git path (REPO_PATH) doesn't
+        # need this — its working tree has real local branches.
+        #
+        # use_three_dot=False because the remote cache is a depth=1
+        # shallow clone — the merge-base commit is typically NOT in
+        # the local history, so the three-dot form would fail with
+        # "no merge base". Two-dot compares the two tips directly,
+        # which is what the code-review use case actually wants.
+        result = git_diff.diff_refs(
+            req.base, req.head, req.path,
+            cwd=entry.path,
+            refs_prefix="origin/",
+            use_three_dot=False,
+        )
     except git_diff.GitError as e:
         raise HTTPException(status_code=400, detail=str(e)) from e
     return GitDiffResponse(**result)

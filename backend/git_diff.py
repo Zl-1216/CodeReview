@@ -195,22 +195,49 @@ def _strip_binary_blocks(raw: str) -> tuple[str, int]:
     return ("\n".join(kept), binary_count)
 
 
-def diff_refs(base: str, head: str, path: str | None = None, cwd: Path | None = None) -> dict:
-    """Run `git diff base...head [-- path]` and return the parsed files.
+def diff_refs(base: str, head: str, path: str | None = None, cwd: Path | None = None,
+              refs_prefix: str = "", use_three_dot: bool = True) -> dict:
+    """Run `git diff base...head [-- path]` (or `base..head` for shallow
+    caches) and return the parsed files.
 
-    Three-dot form (`base...head`) is used so the comparison is against the
-    merge base — what would actually land if you merged `head` into `base`.
-    The single-line summary (`--stat`) and the full diff (`-M -C --diff-filter=ACMRT`)
-    are produced in two passes so the caller can show a stat block alongside
-    the parsed files.
+    Two-dot vs three-dot form:
+      * Three-dot (`base...head`) is the "merge preview" form — it
+        diffs against the merge base, which is what would actually
+        land if you merged `head` into `base`. This is the right
+        answer for a "what's in this PR?" review when you have a
+        full local history, so we use it by default.
+      * Two-dot (`base..head`) compares the two tips directly with no
+        merge-base lookup. The remote-git cache is a `--depth 1`
+        shallow clone, so the merge-base commit is typically NOT
+        in the local history and the three-dot form fails with
+        "no merge base". The remote endpoint passes
+        `use_three_dot=False` for exactly this reason.
 
-    Binary files (which `git diff` renders as `Binary files ... differ`) are
-    stripped from the diff and reported via `binary_skipped`.
+    The single-line summary (`--stat`) and the full diff
+    (`-M -C --diff-filter=ACMRT`) are produced in two passes so the
+    caller can show a stat block alongside the parsed files.
 
-    `cwd` lets callers point `git` at a non-default working tree — used by
-    the remote-git cache (git_remote.RemoteCache) where each clone lives
-    under `REVIEW_DATA_DIR/remotes/{hash}/`. When None, falls back to the
-    configured `REPO_PATH` (or raises GitError if that's not set).
+    Binary files (which `git diff` renders as `Binary files ... differ`)
+    are stripped from the diff and reported via `binary_skipped`.
+
+    `cwd` lets callers point `git` at a non-default working tree — used
+    by the remote-git cache (git_remote.RemoteCache) where each clone
+    lives under `REVIEW_DATA_DIR/remotes/{hash}/`. When None, falls
+    back to the configured `REPO_PATH` (or raises GitError if that's
+    not set).
+
+    `refs_prefix` is prepended to both `base` and `head` in the diff
+    command. The local-git path (REPO_PATH) passes `""` because the
+    working tree has actual local branches named `main` /
+    `feature/...`. The remote-git cache path passes `"origin/"`
+    because the cache only has remote-tracking refs under
+    `refs/remotes/origin/*` — the UI's RefPicker sends short names
+    like `main` (the part after `origin/`), and we have to re-prefix
+    them so `git diff main...feature` resolves to
+    `origin/main...origin/feature`. Without this, the user sees
+    'ambiguous argument "main...feature": unknown revision or path
+    not in the working tree' even though the branch names ARE
+    present in the repo (just under `origin/`, not at the top level).
     """
     base_v = _validate_ref("base", base)
     head_v = _validate_ref("head", head)
@@ -221,16 +248,25 @@ def diff_refs(base: str, head: str, path: str | None = None, cwd: Path | None = 
     else:
         path_v = None
 
-    # build the diff args. three-dot form. -M and -C enable rename / copy
-    # detection so renamed files show up as one file with a coherent diff.
-    diff_args = ["diff", "--no-color", "-M", "-C", "--diff-filter=ACMRT", f"{base_v}...{head_v}"]
+    # Build the diff args. Three-dot or two-dot per `use_three_dot`.
+    # -M and -C enable rename / copy detection so renamed files show
+    # up as one file with a coherent diff.
+    sep = "..." if use_three_dot else ".."
+    diff_args = [
+        "diff", "--no-color", "-M", "-C", "--diff-filter=ACMRT",
+        f"{refs_prefix}{base_v}{sep}{refs_prefix}{head_v}",
+    ]
     if path_v:
         diff_args += ["--", path_v]
 
     raw = _run_git(diff_args, cwd=cwd)
 
     # Quick stat block for the UI to show before the user clicks review.
-    stat_args = ["diff", "--stat", f"{base_v}...{head_v}"]
+    # Same refs_prefix and separator as the main diff call above — the
+    # previous version had a duplicate stat block that forgot both,
+    # so the stat would fail with "Unknown ref" even when the main
+    # diff succeeded.
+    stat_args = ["diff", "--stat", f"{refs_prefix}{base_v}{sep}{refs_prefix}{head_v}"]
     if path_v:
         stat_args += ["--", path_v]
     stat = _run_git(stat_args, cwd=cwd).rstrip()
