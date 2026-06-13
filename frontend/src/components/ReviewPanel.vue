@@ -1,5 +1,5 @@
 <template>
-  <section id="findings-anchor" class="rounded-lg border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900 overflow-hidden scroll-mt-4">
+  <section id="findings-anchor" class="rounded-lg border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900 scroll-mt-4">
     <header class="px-4 py-3 border-b border-gray-200 dark:border-gray-800 flex items-center justify-between gap-2 flex-wrap">
       <div>
         <h2 class="text-sm font-semibold text-gray-900 dark:text-gray-100">{{ t('review.findings') }}</h2>

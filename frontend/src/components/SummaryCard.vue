@@ -152,9 +152,40 @@ function toggleCategory(cat) {
 // files). The anchor lives on the ReviewPanel root (id=
 // 'findings-anchor'); we look it up imperatively rather than via
 // a ref because the SummaryCard doesn't import ReviewPanel.
+//
+// Implementation notes: a plain `el.scrollIntoView({...})` was
+// failing on some page layouts — the ReviewPanel root has
+// `overflow-hidden` (so the element itself doesn't scroll), and
+// the browser's default ancestor walk stops at the nearest
+// scrolling container which can be a div in the layout rather
+// than the window. We compute the target's offsetTop against
+// `document.scrollingElement` (the html element) and assign it
+// to `window.scrollTo` directly — that ALWAYS scrolls the page
+// regardless of any inner overflow contexts.
 function scrollToFindings() {
-  if (typeof document === 'undefined') return
+  if (typeof document === 'undefined' || typeof window === 'undefined') return
   const el = document.getElementById('findings-anchor')
-  if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' })
+  if (!el) {
+    // Soft-fail with a console hint; without this the click is
+    // a no-op and the user has no way to know why.
+    if (typeof console !== 'undefined') {
+      console.warn('[SummaryCard] #findings-anchor not found; cannot scroll')
+    }
+    return
+  }
+  // Compute the target's position relative to the scrolling
+  // viewport. The trick: walk up the offsetParent chain and sum
+  // offsetTop, but stop at the body so we always end up with a
+  // viewport-relative y. (Using getBoundingClientRect + window
+  // .scrollY is more direct and robust to nested containers.)
+  const rect = el.getBoundingClientRect()
+  const targetY = window.scrollY + rect.top - 8  // 8px breathing room
+  try {
+    window.scrollTo({ top: targetY, behavior: 'smooth' })
+  } catch {
+    // Older Safari / fallback: scrollTo with options isn't
+    // always supported; the two-arg form is universally.
+    window.scrollTo(0, targetY)
+  }
 }
 </script>
