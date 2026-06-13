@@ -26,12 +26,17 @@
              reader sees the change + the review of the change
              without scrolling away. The note is NOT inside the
              pre/code flow, so it can use normal prose sizing and
-             i18n. -->
+             i18n. Default state is EXPANDED — the reviewer-emitted
+             detail / code_snippet / suggestion is the most
+             valuable part of the review, so we make it visible
+             up-front rather than hiding it behind a tiny "show
+             detail" link that users miss. The collapse button is
+             still here for users who want a tidier view. -->
         <div
           v-for="f in row.findings"
           :key="`f-${row.id}-${f.id}`"
           :class="[
-            'mx-2 mb-1 ml-12 rounded-md border-l-4 px-3 py-2 text-xs',
+            'mx-2 mb-2 ml-12 rounded-md border-l-4 px-3 py-2 text-xs',
             findingSurfaceClass(f.severity),
           ]"
         >
@@ -45,21 +50,13 @@
             <button
               v-if="f.line_start"
               type="button"
-              class="text-[10px] underline text-indigo-600 dark:text-indigo-400 hover:no-underline shrink-0"
+              class="text-[11px] underline text-indigo-600 dark:text-indigo-400 hover:no-underline shrink-0"
               @click="$emit('locate', f)"
             >
               {{ t('finding.jumpTo') }}
             </button>
           </div>
-          <button
-            v-if="f.detail || f.code_snippet || f.suggestion"
-            type="button"
-            class="mt-1 text-[10px] text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 underline"
-            @click="toggleInline(f.id)"
-          >
-            {{ expandedFindingId === f.id ? t('finding.collapse') : t('finding.expand') }}
-          </button>
-          <div v-if="expandedFindingId === f.id" class="mt-2 space-y-2">
+          <div v-if="f.detail || f.code_snippet || f.suggestion" class="mt-2 space-y-2">
             <p
               v-if="f.detail"
               class="text-gray-700 dark:text-gray-300 leading-relaxed whitespace-pre-line"
@@ -105,7 +102,7 @@
 </template>
 
 <script setup>
-import { computed, ref, watch } from 'vue'
+import { computed, ref } from 'vue'
 import { useI18n } from '../i18n/messages.js'
 import { severityLabel } from '../utils/format.js'
 
@@ -129,26 +126,14 @@ const props = defineProps({
   findings: { type: Array, default: () => [] },
 })
 
-// Stable id for each finding — backend doesn't emit one but the
-// inline template needs a key. Use a composite that survives the
-// finding object's lifetime (severity / category / line / title).
-function _fid(f, idx) {
-  return `${f.file_path || ''}:${f.line_start || 0}:${f.severity || ''}:${f.category || ''}:${f.title || ''}:${idx}`
-}
-
-// Track which inline finding the user has expanded. Stored as the
-// stable id (see above) so re-renders don't lose state.
-const expandedFindingId = ref(null)
-function toggleInline(fid) {
-  expandedFindingId.value = expandedFindingId.value === fid ? null : fid
-}
-
 // Per-instance clipboard state for the code-snippet copy button.
-// Lives in CodeView (not in FindingCard) because we render the
-// snippet inline; otherwise we'd need to share state across N
-// FindingCards via a parent. One copy state per CodeView is
-// enough — the button is per-finding, but the "copied" feedback
-// is global to the visible panel.
+// We deliberately do NOT track per-finding expand/collapse here:
+// the inline card is always expanded by default so the reviewer-
+// emitted detail / code_snippet / suggestion is visible up-front
+// (the user explicitly complained that a tiny "show detail" link
+// was easy to miss). If the user wants a tidier view, they can
+// collapse the entire file's article in ReviewPanel — that's the
+// right unit of compaction, not a per-card toggle.
 const copyState = ref('idle')
 async function copy(text) {
   if (!text) return
@@ -172,24 +157,18 @@ async function copy(text) {
     copyState.value = 'idle'
   }
 }
-
-// If the props.findings array reference changes (e.g. new review),
-// close any open inline expansion so the next finding isn't
-// accidentally pre-expanded.
-watch(() => props.findings, () => { expandedFindingId.value = null })
-
 // Build a map from line number (new for added/context, old for
 // removed) to the list of findings targeting that line. Both
 // `line_start` modes are supported because the parser emits the
 // line number in the appropriate coordinate system.
 const findingsByLine = computed(() => {
   const m = new Map()
-  for (const f of props.findings) {
-    if (!f.line_start) continue
-    const id = _fid(f, props.findings.indexOf(f))
+  props.findings.forEach((f, idx) => {
+    if (!f.line_start) return
+    const id = `${f.file_path || ''}:${f.line_start}:${f.severity || ''}:${f.category || ''}:${f.title || ''}:${idx}`
     if (!m.has(f.line_start)) m.set(f.line_start, [])
     m.get(f.line_start).push({ ...f, id })
-  }
+  })
   return m
 })
 
