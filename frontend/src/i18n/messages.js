@@ -155,6 +155,7 @@ const messages = {
     'finding.copied': 'Copied',
     'finding.copyAria': 'Copy code snippet',
     'finding.suggestedFix': 'Suggested fix',
+    'finding.codeSnippet': 'Reviewed code',
     'finding.expand': 'Show detail',
     'finding.collapse': 'Hide detail',
 
@@ -313,6 +314,7 @@ const messages = {
     'finding.copied': '已复制',
     'finding.copyAria': '复制代码片段',
     'finding.suggestedFix': '建议修复',
+    'finding.codeSnippet': '被评审的代码',
     'finding.expand': '展开详情',
     'finding.collapse': '收起详情',
 

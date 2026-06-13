@@ -51,19 +51,53 @@
               {{ t('finding.jumpTo') }}
             </button>
           </div>
-          <p
-            v-if="expandedFindingId === f.id"
-            class="mt-1.5 text-gray-700 dark:text-gray-300 leading-relaxed whitespace-pre-line"
-          >
-            {{ f.detail }}
-          </p>
           <button
+            v-if="f.detail || f.code_snippet || f.suggestion"
             type="button"
             class="mt-1 text-[10px] text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 underline"
             @click="toggleInline(f.id)"
           >
             {{ expandedFindingId === f.id ? t('finding.collapse') : t('finding.expand') }}
           </button>
+          <div v-if="expandedFindingId === f.id" class="mt-2 space-y-2">
+            <p
+              v-if="f.detail"
+              class="text-gray-700 dark:text-gray-300 leading-relaxed whitespace-pre-line"
+            >
+              {{ f.detail }}
+            </p>
+            <!-- The code snippet the reviewer was looking at —
+                 this is the "详细代码细节" (the actual code lines
+                 being commented on). Often multi-line, e.g. the
+                 function containing the offending line. -->
+            <div
+              v-if="f.code_snippet"
+              class="relative rounded-md bg-gray-900 text-gray-100 px-3 py-2 overflow-x-auto"
+            >
+              <button
+                type="button"
+                class="absolute top-1 right-1 text-[10px] uppercase tracking-wide text-gray-300 hover:text-white bg-gray-800/80 rounded px-1.5 py-0.5"
+                :aria-label="t('finding.copyAria')"
+                @click="copy(f.code_snippet)"
+              >
+                {{ copyState === 'copied' ? t('finding.copied') : t('finding.copy') }}
+              </button>
+              <div class="text-[10px] uppercase tracking-wide text-gray-400 mb-1">
+                {{ t('finding.codeSnippet') }}
+              </div>
+              <pre class="font-mono text-[11px] whitespace-pre"><code>{{ f.code_snippet }}</code></pre>
+            </div>
+            <!-- Proposed fix from the reviewer. -->
+            <div
+              v-if="f.suggestion"
+              class="rounded-md border border-emerald-200 dark:border-emerald-800/50 bg-emerald-50/40 dark:bg-emerald-900/10 px-3 py-2"
+            >
+              <div class="text-[10px] font-medium text-emerald-700 dark:text-emerald-300 mb-1">
+                {{ t('finding.suggestedFix') }}
+              </div>
+              <pre class="font-mono text-[11px] text-emerald-900 dark:text-emerald-100 whitespace-pre-wrap break-words"><code>{{ f.suggestion }}</code></pre>
+            </div>
+          </div>
         </div>
       </template>
     </div>
@@ -107,6 +141,36 @@ function _fid(f, idx) {
 const expandedFindingId = ref(null)
 function toggleInline(fid) {
   expandedFindingId.value = expandedFindingId.value === fid ? null : fid
+}
+
+// Per-instance clipboard state for the code-snippet copy button.
+// Lives in CodeView (not in FindingCard) because we render the
+// snippet inline; otherwise we'd need to share state across N
+// FindingCards via a parent. One copy state per CodeView is
+// enough — the button is per-finding, but the "copied" feedback
+// is global to the visible panel.
+const copyState = ref('idle')
+async function copy(text) {
+  if (!text) return
+  try {
+    if (typeof navigator !== 'undefined' && navigator.clipboard?.writeText) {
+      await navigator.clipboard.writeText(text)
+    } else {
+      // Fallback for non-secure contexts / older browsers.
+      const ta = document.createElement('textarea')
+      ta.value = text
+      ta.style.position = 'fixed'
+      ta.style.opacity = '0'
+      document.body.appendChild(ta)
+      ta.select()
+      document.execCommand('copy')
+      document.body.removeChild(ta)
+    }
+    copyState.value = 'copied'
+    setTimeout(() => (copyState.value = 'idle'), 1200)
+  } catch {
+    copyState.value = 'idle'
+  }
 }
 
 // If the props.findings array reference changes (e.g. new review),
