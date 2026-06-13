@@ -65,8 +65,24 @@
       {{ summary.overall_assessment }}
     </p>
 
-    <div v-if="exportable" class="flex justify-end">
+    <!-- "View findings" CTA — the SummaryCard is the only thing
+         visible in the first viewport, so the user needs an
+         obvious affordance to discover the ReviewPanel below.
+         Without this, the user sees the summary text and assumes
+         that's all there is (a real complaint from production:
+         "我没看到具体的代码信息和评审信息"). -->
+    <div class="flex items-center justify-between gap-2">
       <button
+        v-if="summary.total_findings > 0"
+        type="button"
+        class="inline-flex items-center gap-1.5 rounded-md border border-indigo-300 dark:border-indigo-700 bg-indigo-50 dark:bg-indigo-900/30 text-indigo-700 dark:text-indigo-200 hover:bg-indigo-100 dark:hover:bg-indigo-900/50 px-3 py-1.5 text-xs font-medium transition"
+        @click="scrollToFindings"
+      >
+        <span>{{ t('summary.viewFindings', { n: summary.total_findings }) }}</span>
+        <span aria-hidden="true">↓</span>
+      </button>
+      <button
+        v-if="exportable"
         type="button"
         class="text-xs text-gray-500 hover:text-indigo-600 dark:hover:text-indigo-300"
         @click="$emit('export')"
@@ -127,5 +143,18 @@ function toggleSeverity(sev) {
 }
 function toggleCategory(cat) {
   emit('update:filterCategory', props.filterCategory === cat ? null : cat)
+}
+
+// Scroll the ReviewPanel into view. The summary card is the
+// "above the fold" landing for a finished review; without an
+// explicit jump the user has to know the per-file review feed is
+// even there (it's below the first viewport when there are >5
+// files). The anchor lives on the ReviewPanel root (id=
+// 'findings-anchor'); we look it up imperatively rather than via
+// a ref because the SummaryCard doesn't import ReviewPanel.
+function scrollToFindings() {
+  if (typeof document === 'undefined') return
+  const el = document.getElementById('findings-anchor')
+  if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' })
 }
 </script>

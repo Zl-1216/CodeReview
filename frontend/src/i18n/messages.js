@@ -147,6 +147,10 @@ const messages = {
     'review.waiting': 'Waiting for findings…',
     'review.allFiles': 'All files',
     'review.errorBanner': 'Review error',
+    'review.noFilesInStatus': 'No files with status {status}.',
+    'review.clearFiltersHint': 'Click an active filter chip to clear it.',
+    'review.noFindingsInReview': 'No findings in this review.',
+    'review.reviewCompleteHint': 'The review completed successfully — this just means the engine found nothing to report.',
 
     // finding card
     'finding.jumpTo': 'Jump to line',
@@ -175,6 +179,7 @@ const messages = {
     'summary.statusCompleted': 'Completed',
     'summary.statusFailed': 'Failed',
     'summary.download': 'Download as Markdown',
+    'summary.viewFindings': 'View {n} finding(s)',
     'summary.filterBy': 'Filter by {cat}',
 
     // code view
@@ -307,6 +312,10 @@ const messages = {
     'review.waiting': '等待 finding…',
     'review.allFiles': '所有文件',
     'review.errorBanner': '评审错误',
+    'review.noFilesInStatus': '没有状态为 {status} 的文件。',
+    'review.clearFiltersHint': '点已激活的过滤 chip 来清除。',
+    'review.noFindingsInReview': '本次评审没有 finding。',
+    'review.reviewCompleteHint': '评审已成功完成 —— 引擎没有发现需要报告的问题。',
 
     'finding.jumpTo': '跳到行',
     'finding.jumpToAria': '跳到上方代码视图对应行',
@@ -332,6 +341,7 @@ const messages = {
     'summary.statusCompleted': '已完成',
     'summary.statusFailed': '失败',
     'summary.download': '下载为 Markdown',
+    'summary.viewFindings': '查看 {n} 条评审',
     'summary.filterBy': '按 {cat} 过滤',
 
     'codeView.empty': '暂无内容',

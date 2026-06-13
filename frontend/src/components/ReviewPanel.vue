@@ -1,5 +1,5 @@
 <template>
-  <section class="rounded-lg border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900 overflow-hidden">
+  <section id="findings-anchor" class="rounded-lg border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900 overflow-hidden scroll-mt-4">
     <header class="px-4 py-3 border-b border-gray-200 dark:border-gray-800 flex items-center justify-between gap-2 flex-wrap">
       <div>
         <h2 class="text-sm font-semibold text-gray-900 dark:text-gray-100">{{ t('review.findings') }}</h2>
@@ -52,6 +52,14 @@
            2. the diff with INLINE findings (one FindingCard right
               below each diff line that has a finding) -->
     <div class="divide-y divide-gray-100 dark:divide-gray-800">
+      <!-- Empty / loading states. The user previously reported
+           "只能看到评审摘要，没看到具体的代码信息" — the most
+           common cause was either (a) the page hadn't scrolled
+           down to the ReviewPanel yet, or (b) the empty state
+           here was too generic and looked like a bug. We now show
+           a clearer hint that points back to the summary, plus
+           a distinct "loading" / "no findings" / "filtered out"
+           copy so the user knows which state they're in. -->
       <div v-if="!findings.length && status !== 'completed'" class="p-6 text-center text-sm text-gray-500 dark:text-gray-400">
         <span v-if="status === 'idle'">{{ t('review.idle') }}</span>
         <span v-else-if="status === 'connecting'" class="inline-flex items-center gap-2">
@@ -61,9 +69,22 @@
         <span v-else>{{ t('review.waiting') }}</span>
       </div>
 
-      <div v-else-if="!filteredFiles.length" class="p-6 text-center text-sm text-gray-500 dark:text-gray-400">
-        <span v-if="filterSeverity || filterCategory">{{ t('review.noMatch') }}</span>
-        <span v-else>{{ t('review.clean') }}</span>
+      <div v-else-if="findings.length > 0 && !filteredFiles.length" class="p-6 text-center text-sm text-gray-500 dark:text-gray-400 space-y-1">
+        <p>
+          <span v-if="filterSeverity || filterCategory">{{ t('review.noMatch') }}</span>
+          <span v-else-if="fileStatusFilter !== 'all'">{{ t('review.noFilesInStatus', { status: t('files.filter' + fileStatusFilter[0].toUpperCase() + fileStatusFilter.slice(1)) }) }}</span>
+          <span v-else>{{ t('review.clean') }}</span>
+        </p>
+        <p class="text-xs text-gray-400 dark:text-gray-500">
+          {{ t('review.clearFiltersHint') }}
+        </p>
+      </div>
+
+      <div v-else-if="!findings.length && status === 'completed'" class="p-6 text-center text-sm text-gray-500 dark:text-gray-400">
+        <p>{{ t('review.noFindingsInReview') }}</p>
+        <p class="text-xs text-gray-400 dark:text-gray-500 mt-1">
+          {{ t('review.reviewCompleteHint') }}
+        </p>
       </div>
 
       <article
