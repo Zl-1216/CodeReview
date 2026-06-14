@@ -228,5 +228,37 @@ const rows = computed(() => {
     findings: [],
   }))
 })
+
+function rowClass(row) {
+  switch (row.diffType) {
+    case 'added': return 'bg-emerald-50 dark:bg-emerald-900/15 hover:bg-emerald-100/80 dark:hover:bg-emerald-900/25'
+    case 'removed': return 'bg-rose-50 dark:bg-rose-900/15 hover:bg-rose-100/80 dark:hover:bg-rose-900/25'
+    default: return 'hover:bg-gray-100 dark:hover:bg-gray-900/60'
+  }
+}
+
+function gutterClass(row) {
+  switch (row.diffType) {
+    case 'added': return 'text-emerald-600 dark:text-emerald-300 bg-emerald-100/40 dark:bg-emerald-900/20 border-emerald-200 dark:border-emerald-800/40'
+    case 'removed': return 'text-rose-600 dark:text-rose-300 bg-rose-100/40 dark:bg-rose-900/20 border-rose-200 dark:border-rose-800/40'
+    default: return 'text-gray-400 border-gray-200 dark:border-gray-800 bg-gray-50/50 dark:bg-gray-950/50'
+  }
+}
+
+function markerClass(row) {
+  switch (row.diffType) {
+    case 'added': return 'text-emerald-600 dark:text-emerald-400'
+    case 'removed': return 'text-rose-600 dark:text-rose-400'
+    default: return 'text-gray-300 dark:text-gray-600'
+  }
+}
+
+function textClass(row) {
+  switch (row.diffType) {
+    case 'added': return 'text-emerald-900 dark:text-emerald-100'
+    case 'removed': return 'text-rose-900 dark:text-rose-100 line-through decoration-rose-400/50'
+    default: return 'text-gray-800 dark:text-gray-200'
+  }
+}
 </script>
 
