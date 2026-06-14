@@ -7,7 +7,7 @@
         <div class="space-y-4 min-w-0">
           <InputPanel v-if="!review.currentReview.value" @submit="review.submit" />
 
-          <template v-else>
+          <div v-else id="findings-anchor" class="space-y-4 scroll-mt-4">
             <div class="flex items-center justify-between gap-2 flex-wrap">
               <div>
                 <h2 class="text-base font-semibold text-gray-900 dark:text-gray-100">
@@ -69,7 +69,7 @@
               @update:filter-severity="(v) => (review.filterSeverity.value = v)"
               @update:filter-category="(v) => (review.filterCategory.value = v)"
             />
-          </template>
+          </div>
         </div>
 
         <aside class="space-y-4">
