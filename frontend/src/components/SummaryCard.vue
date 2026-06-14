@@ -72,20 +72,21 @@
          that's all there is (a real complaint from production:
          "我没看到具体的代码信息和评审信息").
 
-         Implementation: a plain <a href="#findings-anchor">. We
-         tried a button + window.scrollTo / scrollIntoView first,
-         but in some layouts (sticky headers, transformed
-         ancestors, scrolled-inner containers) both APIs failed
-         to actually move the viewport. The native fragment-
-         navigation is the most boring, most compatible way to
-         scroll the page to an element — the browser handles the
-         edge cases, our CSS `scroll-mt-4` on the target
-         accounts for any sticky header. -->
+         We use <a href="#findings-anchor"> for the native
+         fragment-navigation (most boring, most reliable scroll
+         API in the browser), PLUS an @click handler that runs
+         an imperative scroll + brief highlight animation as
+         backup. Both code paths run on every click; whichever
+         wins is fine. The user sees:
+           1. The page scrolling to the ReviewPanel
+           2. A 1.5-second yellow ring on the target so they
+              can't miss it landed. -->
     <div class="flex items-center justify-between gap-2">
       <a
         v-if="summary.total_findings > 0"
         href="#findings-anchor"
         class="inline-flex items-center gap-1.5 rounded-md border border-indigo-300 dark:border-indigo-700 bg-indigo-50 dark:bg-indigo-900/30 text-indigo-700 dark:text-indigo-200 hover:bg-indigo-100 dark:hover:bg-indigo-900/50 px-3 py-1.5 text-xs font-medium transition"
+        @click="onViewFindingsClick"
       >
         <span>{{ t('summary.viewFindings', { n: summary.total_findings }) }}</span>
         <span aria-hidden="true">↓</span>
@@ -125,6 +126,42 @@ function toggleSeverity(sev) {
 }
 function toggleCategory(cat) {
   emit('update:filterCategory', props.filterCategory === cat ? null : cat)
+}
+
+// Belt-and-suspenders scroll handler. The <a href="#anchor">
+// above already triggers native fragment navigation when the
+// click event is allowed to propagate; we additionally call
+// scrollIntoView + a brief outline ring on the target so the
+// user definitively SEES the scroll happen (previous attempts
+// silently no-op'd for the user, even when the anchor target
+// existed in the DOM — most likely a browser extension,
+// reduced-motion setting, or a sticky-header interaction
+// suppressing the native fragment scroll).
+function onViewFindingsClick() {
+  if (typeof document === 'undefined') return
+  const el = document.getElementById('findings-anchor')
+  if (!el) {
+    if (typeof console !== 'undefined') {
+      console.warn('[SummaryCard] #findings-anchor not in DOM at click time')
+    }
+    return
+  }
+  // Imperative fallback: try the modern API, then a 2-arg form
+  // for older browsers. We do NOT preventDefault — the <a href>
+  // still does its native fragment scroll on top of this.
+  try {
+    el.scrollIntoView({ behavior: 'smooth', block: 'start' })
+  } catch {
+    const rect = el.getBoundingClientRect()
+    const y = (window.scrollY || 0) + rect.top - 8
+    try { window.scrollTo({ top: y, behavior: 'smooth' }) }
+    catch { window.scrollTo(0, y) }
+  }
+  // Brief highlight so the user can't miss the target.
+  el.classList.add('ring-4', 'ring-yellow-400', 'ring-offset-2', 'ring-offset-gray-50', 'dark:ring-offset-gray-950')
+  setTimeout(() => {
+    el.classList.remove('ring-4', 'ring-yellow-400', 'ring-offset-2', 'ring-offset-gray-50', 'dark:ring-offset-gray-950')
+  }, 1500)
 }
 
 const statusLabelText = computed(() => {
