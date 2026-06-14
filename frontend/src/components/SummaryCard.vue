@@ -70,17 +70,26 @@
          obvious affordance to discover the ReviewPanel below.
          Without this, the user sees the summary text and assumes
          that's all there is (a real complaint from production:
-         "我没看到具体的代码信息和评审信息"). -->
+         "我没看到具体的代码信息和评审信息").
+
+         Implementation: a plain <a href="#findings-anchor">. We
+         tried a button + window.scrollTo / scrollIntoView first,
+         but in some layouts (sticky headers, transformed
+         ancestors, scrolled-inner containers) both APIs failed
+         to actually move the viewport. The native fragment-
+         navigation is the most boring, most compatible way to
+         scroll the page to an element — the browser handles the
+         edge cases, our CSS `scroll-mt-4` on the target
+         accounts for any sticky header. -->
     <div class="flex items-center justify-between gap-2">
-      <button
+      <a
         v-if="summary.total_findings > 0"
-        type="button"
+        href="#findings-anchor"
         class="inline-flex items-center gap-1.5 rounded-md border border-indigo-300 dark:border-indigo-700 bg-indigo-50 dark:bg-indigo-900/30 text-indigo-700 dark:text-indigo-200 hover:bg-indigo-100 dark:hover:bg-indigo-900/50 px-3 py-1.5 text-xs font-medium transition"
-        @click="scrollToFindings"
       >
         <span>{{ t('summary.viewFindings', { n: summary.total_findings }) }}</span>
         <span aria-hidden="true">↓</span>
-      </button>
+      </a>
       <button
         v-if="exportable"
         type="button"
@@ -111,6 +120,13 @@ const props = defineProps({
 
 const emit = defineEmits(['update:filterSeverity', 'update:filterCategory', 'export'])
 
+function toggleSeverity(sev) {
+  emit('update:filterSeverity', props.filterSeverity === sev ? null : sev)
+}
+function toggleCategory(cat) {
+  emit('update:filterCategory', props.filterCategory === cat ? null : cat)
+}
+
 const statusLabelText = computed(() => {
   switch (props.status) {
     case 'idle': return t('summary.statusIdle')
@@ -137,55 +153,4 @@ const hasCategoryCounts = computed(() => {
   if (!bc) return false
   return Object.values(bc).some((n) => n > 0)
 })
-
-function toggleSeverity(sev) {
-  emit('update:filterSeverity', props.filterSeverity === sev ? null : sev)
-}
-function toggleCategory(cat) {
-  emit('update:filterCategory', props.filterCategory === cat ? null : cat)
-}
-
-// Scroll the ReviewPanel into view. The summary card is the
-// "above the fold" landing for a finished review; without an
-// explicit jump the user has to know the per-file review feed is
-// even there (it's below the first viewport when there are >5
-// files). The anchor lives on the ReviewPanel root (id=
-// 'findings-anchor'); we look it up imperatively rather than via
-// a ref because the SummaryCard doesn't import ReviewPanel.
-//
-// Implementation notes: a plain `el.scrollIntoView({...})` was
-// failing on some page layouts — the ReviewPanel root has
-// `overflow-hidden` (so the element itself doesn't scroll), and
-// the browser's default ancestor walk stops at the nearest
-// scrolling container which can be a div in the layout rather
-// than the window. We compute the target's offsetTop against
-// `document.scrollingElement` (the html element) and assign it
-// to `window.scrollTo` directly — that ALWAYS scrolls the page
-// regardless of any inner overflow contexts.
-function scrollToFindings() {
-  if (typeof document === 'undefined' || typeof window === 'undefined') return
-  const el = document.getElementById('findings-anchor')
-  if (!el) {
-    // Soft-fail with a console hint; without this the click is
-    // a no-op and the user has no way to know why.
-    if (typeof console !== 'undefined') {
-      console.warn('[SummaryCard] #findings-anchor not found; cannot scroll')
-    }
-    return
-  }
-  // Compute the target's position relative to the scrolling
-  // viewport. The trick: walk up the offsetParent chain and sum
-  // offsetTop, but stop at the body so we always end up with a
-  // viewport-relative y. (Using getBoundingClientRect + window
-  // .scrollY is more direct and robust to nested containers.)
-  const rect = el.getBoundingClientRect()
-  const targetY = window.scrollY + rect.top - 8  // 8px breathing room
-  try {
-    window.scrollTo({ top: targetY, behavior: 'smooth' })
-  } catch {
-    // Older Safari / fallback: scrollTo with options isn't
-    // always supported; the two-arg form is universally.
-    window.scrollTo(0, targetY)
-  }
-}
 </script>
