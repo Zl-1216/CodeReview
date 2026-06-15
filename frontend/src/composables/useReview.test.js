@@ -301,3 +301,162 @@ describe('useReview', () => {
     expect(api.getReview).toHaveBeenCalled()
   })
 })
+
+
+// --- I7: tree navigation state (activeFile / treeExpanded) ------------
+
+describe('useReview — tree navigation (I7)', () => {
+  beforeEach(async () => {
+    vi.clearAllMocks()
+    // api is imported by the top-level describe's beforeEach; this
+    // block only needs the localStorage reset for the persistence
+    // tests below.
+    localStorage.clear()
+  })
+
+  function pushFiles(r, list) {
+    r.files.value = list
+  }
+
+  it('activeFile defaults to the first file with findings', async () => {
+    const session = makeSession()
+    const r = useReview(session, makeHistory())
+    pushFiles(r, [
+      { path: 'a.py', status: 'unchanged' },
+      { path: 'b.py', status: 'added' },
+    ])
+    session.findings.value = [{ id: 1, file_path: 'b.py' }]
+    await nextTick()
+    expect(r.activeFile.value).toBe('b.py')
+  })
+
+  it('activeFile falls back to first added/modified when no findings exist', async () => {
+    const session = makeSession()
+    const r = useReview(session, makeHistory())
+    pushFiles(r, [
+      { path: 'a.py', status: 'unchanged' },
+      { path: 'b.py', status: 'added' },
+      { path: 'c.py', status: 'modified' },
+    ])
+    session.findings.value = []
+    await nextTick()
+    expect(r.activeFile.value).toBe('b.py')
+  })
+
+  it('activeFile falls back to the first file when nothing is added/modified', async () => {
+    const session = makeSession()
+    const r = useReview(session, makeHistory())
+    pushFiles(r, [
+      { path: 'a.py', status: 'unchanged' },
+      { path: 'b.py', status: 'unchanged' },
+    ])
+    session.findings.value = []
+    await nextTick()
+    expect(r.activeFile.value).toBe('a.py')
+  })
+
+  it('activeFile is reset to null when the review has no files', async () => {
+    const session = makeSession()
+    const r = useReview(session, makeHistory())
+    pushFiles(r, [{ path: 'a.py', status: 'added' }])
+    session.findings.value = []
+    await nextTick()
+    expect(r.activeFile.value).toBe('a.py')
+    // Reset to no files
+    pushFiles(r, [])
+    await nextTick()
+    expect(r.activeFile.value).toBeNull()
+  })
+
+  it('activeFile persists to localStorage when files are present', async () => {
+    const session = makeSession()
+    const r = useReview(session, makeHistory())
+    pushFiles(r, [
+      { path: 'a.py', status: 'added' },
+      { path: 'b.py', status: 'modified' },
+    ])
+    session.findings.value = []
+    await nextTick()
+    r.activeFile.value = 'b.py'
+    await nextTick()
+    expect(localStorage.getItem('codereview.review.activeFile')).toBe('b.py')
+  })
+
+  it('stale activeFile in localStorage falls back to default', async () => {
+    localStorage.setItem('codereview.review.activeFile', 'gone.py')
+    const session = makeSession()
+    const r = useReview(session, makeHistory())
+    pushFiles(r, [
+      { path: 'a.py', status: 'added' },
+      { path: 'b.py', status: 'modified' },
+    ])
+    session.findings.value = []
+    await nextTick()
+    // The dead 'gone.py' is replaced by the review's default. The new
+    // value is itself persisted so a reload of THIS review lands on
+    // the same file — the "clear the stored key" part of the spec
+    // refers to no longer trusting the stale entry, not to keeping
+    // the slot empty forever.
+    expect(r.activeFile.value).toBe('a.py')
+    expect(localStorage.getItem('codereview.review.activeFile')).toBe('a.py')
+  })
+
+  it('setActiveFile is a thin wrapper around the ref', () => {
+    const r = useReview(makeSession(), makeHistory())
+    r.setActiveFile('foo.py')
+    expect(r.activeFile.value).toBe('foo.py')
+  })
+
+  it('toggleFolder adds and removes a folder path from treeExpanded', () => {
+    const r = useReview(makeSession(), makeHistory())
+    expect(r.treeExpanded.value.has('src')).toBe(false)
+    r.toggleFolder('src')
+    expect(r.treeExpanded.value.has('src')).toBe(true)
+    r.toggleFolder('src')
+    expect(r.treeExpanded.value.has('src')).toBe(false)
+  })
+
+  it('treeExpanded persists to localStorage as a JSON array (gated on files.length > 0)', async () => {
+    const session = makeSession()
+    const r = useReview(session, makeHistory())
+    pushFiles(r, [{ path: 'src/a.py', status: 'added' }])
+    session.findings.value = []
+    await nextTick()
+    r.toggleFolder('src')
+    r.toggleFolder('src/api')
+    await nextTick()
+    const raw = localStorage.getItem('codereview.review.treeExpanded')
+    expect(JSON.parse(raw).sort()).toEqual(['src', 'src/api'])
+  })
+
+  it('unknown folders in treeExpanded are dropped after files load', async () => {
+    localStorage.setItem(
+      'codereview.review.treeExpanded',
+      JSON.stringify(['src', 'src/api', 'does-not-exist'])
+    )
+    const session = makeSession()
+    const r = useReview(session, makeHistory())
+    pushFiles(r, [
+      { path: 'src/a.py', status: 'added' },
+      { path: 'src/api/b.py', status: 'modified' },
+    ])
+    session.findings.value = []
+    await nextTick()
+    expect(r.treeExpanded.value.has('src')).toBe(true)
+    expect(r.treeExpanded.value.has('src/api')).toBe(true)
+    expect(r.treeExpanded.value.has('does-not-exist')).toBe(false)
+  })
+
+  it('reset() clears activeFile but keeps treeExpanded across reviews', () => {
+    const session = makeSession()
+    const r = useReview(session, makeHistory())
+    r.toggleFolder('src')
+    r.activeFile.value = 'x.py'
+    r.reset()
+    expect(r.activeFile.value).toBeNull()
+    // treeExpanded is intentionally NOT reset — the next review might
+    // share a folder, and re-expanding is more annoying than a stale
+    // entry (which the validator prunes anyway).
+    expect(r.treeExpanded.value.has('src')).toBe(true)
+  })
+})

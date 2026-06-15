@@ -9,6 +9,8 @@ import {
   formatDuration,
   severityLabel,
   categoryLabel,
+  groupFilesByFolder,
+  listFolderPaths,
   SEVERITY_ORDER,
   CATEGORY_ORDER,
 } from './format.js'
@@ -183,5 +185,88 @@ describe('format.js — fileStatusLabel', () => {
     // Useful so the UI shows "refactor" or whatever custom id the
     // engine might invent later, instead of `files.statusRefactor`.
     expect(fileStatusLabel('totally_unknown', 'en')).toBe('totally_unknown')
+  })
+})
+
+
+// --- groupFilesByFolder / listFolderPaths (I7) -----------------------
+
+describe('format.js — groupFilesByFolder', () => {
+  it('returns an empty root for an empty / missing list', () => {
+    expect(groupFilesByFolder([]).files).toEqual([])
+    expect(groupFilesByFolder([]).folders.size).toBe(0)
+    expect(groupFilesByFolder(null).files).toEqual([])
+  })
+
+  it('keeps root-level files at the root', () => {
+    const files = [{ path: 'README.md' }, { path: 'LICENSE' }]
+    const root = groupFilesByFolder(files)
+    expect(root.files).toHaveLength(2)
+    expect(root.folders.size).toBe(0)
+  })
+
+  it('nests files under their containing folder', () => {
+    const files = [
+      { path: 'src/server.py' },
+      { path: 'src/client.py' },
+      { path: 'tests/test_server.py' },
+    ]
+    const root = groupFilesByFolder(files)
+    expect(root.files).toHaveLength(0)
+    expect(root.folders.size).toBe(2)
+    const src = root.folders.get('src')
+    expect(src.files).toHaveLength(2)
+    expect(src.files[0].name).toBe('client.py')
+    const tests = root.folders.get('tests')
+    expect(tests.files).toHaveLength(1)
+  })
+
+  it('handles deeply nested paths and sorts folders alphabetically', () => {
+    const files = [
+      { path: 'src/api/v2/handler.py' },
+      { path: 'src/api/v1/handler.py' },
+      { path: 'src/api/handler.py' },
+    ]
+    const root = groupFilesByFolder(files)
+    const src = root.folders.get('src')
+    const api = src.folders.get('api')
+    expect(api.path).toBe('src/api')
+    // v1, v2, and the bare handler — three children: two folders
+    // (v1, v2) and one file (handler.py).
+    expect(api.folders.size).toBe(2)
+    expect(api.files).toHaveLength(1)
+    const childNames = Array.from(api.folders.keys())
+    expect(childNames).toEqual(['v1', 'v2'])
+    expect(api.folders.get('v1').files[0].path).toBe('src/api/v1/handler.py')
+  })
+
+  it('sorts files by status then path within a folder', () => {
+    // The renderer relies on this order so the user sees added
+    // files first, then modified, then deleted, then unchanged.
+    const files = [
+      { path: 'src/z.py', status: 'unchanged' },
+      { path: 'src/a.py', status: 'added' },
+      { path: 'src/m.py', status: 'modified' },
+      { path: 'src/b.py', status: 'added' },
+    ]
+    const root = groupFilesByFolder(files)
+    const src = root.folders.get('src')
+    expect(src.files.map((f) => f.path)).toEqual([
+      'src/a.py',
+      'src/b.py',
+      'src/m.py',
+      'src/z.py',
+    ])
+  })
+})
+
+describe('format.js — listFolderPaths', () => {
+  it('returns a pre-order list of folder paths', () => {
+    const root = groupFilesByFolder([
+      { path: 'src/a.py' },
+      { path: 'src/api/v1/b.py' },
+    ])
+    const paths = listFolderPaths(root)
+    expect(paths).toEqual(['', 'src', 'src/api', 'src/api/v1'])
   })
 })

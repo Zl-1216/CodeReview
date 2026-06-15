@@ -125,3 +125,79 @@ export function fileStatusLabel(status, locale) {
   const out = translate(locale, `files.status${status[0].toUpperCase()}${status.slice(1)}`)
   return out.startsWith('files.status') ? status : out
 }
+
+// Group a flat list of files (each with a `path` property) into a
+// nested folder → file tree for the ReviewTree component. Each file's
+// `path` is split on `/`; intermediate segments become folder nodes,
+// the final segment becomes the file node. Folders are sorted
+// alphabetically; files are sorted by status (FILE_STATUS_ORDER) and
+// then alphabetically. Root-level files (no `/` in path) live under
+// the empty-string folder name so the renderer can decide whether to
+// show a dedicated "root" row or not.
+//
+// Returned shape:
+//   { name, path, files, folders }
+// where `path` is the folder path ('' for root) and `folders` is the
+// same shape recursively. Empty folders are NOT pruned here — the
+// renderer prunes after applying the active status filter.
+export function groupFilesByFolder(files) {
+  const root = { name: '', path: '', files: [], folders: new Map() }
+  if (!files || !files.length) return root
+
+  const order = Object.fromEntries(FILE_STATUS_ORDER.map((s, i) => [s, i]))
+
+  for (const f of files) {
+    const parts = (f.path || '').split('/').filter(Boolean)
+    if (parts.length <= 1) {
+      root.files.push(f)
+      continue
+    }
+    const fileName = parts.pop()
+    let cursor = root
+    let folderPath = ''
+    for (const seg of parts) {
+      folderPath = folderPath ? `${folderPath}/${seg}` : seg
+      if (!cursor.folders.has(seg)) {
+        cursor.folders.set(seg, {
+          name: seg,
+          path: folderPath,
+          files: [],
+          folders: new Map(),
+        })
+      }
+      cursor = cursor.folders.get(seg)
+    }
+    // Attach a transient `name` on the file for the renderer to read
+    // without re-splitting the path. We don't mutate the source file.
+    cursor.files.push({ ...f, name: fileName })
+  }
+
+  function sortFolder(node) {
+    node.files.sort((a, b) => {
+      const da = order[a.status] ?? 99
+      const db = order[b.status] ?? 99
+      if (da !== db) return da - db
+      return (a.path || '').localeCompare(b.path || '')
+    })
+    const children = Array.from(node.folders.values()).sort((a, b) =>
+      a.name.localeCompare(b.name)
+    )
+    node.folders = new Map(children.map((c) => [c.name, c]))
+    for (const child of children) sortFolder(child)
+  }
+  sortFolder(root)
+
+  return root
+}
+
+// Flatten a folder tree (output of `groupFilesByFolder`) into an
+// array of folder paths in pre-order (root, then recursive children
+// in the order they appear in the tree). Used by the ReviewTree to
+// enumerate known folders for `treeExpanded` validation.
+export function listFolderPaths(node) {
+  const out = [node.path || '']
+  for (const child of node.folders.values()) {
+    out.push(...listFolderPaths(child))
+  }
+  return out
+}
