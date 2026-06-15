@@ -1,5 +1,5 @@
 <template>
-  <section class="rounded-lg border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900">
+  <section id="findings-anchor" class="rounded-lg border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900">
     <header class="px-4 py-3 border-b border-gray-200 dark:border-gray-800 flex items-center justify-between gap-2 flex-wrap">
       <div>
         <h2 class="text-sm font-semibold text-gray-900 dark:text-gray-100">{{ t('review.findings') }}</h2>
@@ -11,22 +11,88 @@
       </div>
     </header>
 
-    <!-- I6: compact file navigation — single row with status filter
-         chips and inline file chips. The big "Files changed" band
-         from the previous design is gone; the file list is the
-         actual review feed header. -->
+    <!-- I7: sticky file tab bar + expand/collapse all.
+
+         The user complaint was that with 15 findings spread across
+         N files, the only way to navigate was to manually scroll
+         through the whole vertical review feed — slow, no
+         orientation, and the per-file collapse button was easy to
+         miss. This row fixes both problems:
+
+           1. A horizontal tab bar of one chip per file, sticky to
+              the top of the panel so it stays in reach. Click a
+              tab to smoothly scroll to that file's article. An
+              IntersectionObserver marks the file currently in
+              view as the active tab (ring + bolder colour).
+
+           2. Two buttons, "Expand all" / "Collapse all", that
+              walk the entire `collapsedFiles` Set in one pass.
+              This is the "I want to see only one file's diff in
+              detail" workflow: collapse everything, then click a
+              tab to expand one.
+
+         The status filter chips are kept on a second row so the
+         user can scope the whole feed to "Added only" etc.
+         without losing the file navigation. -->
     <div
-      v-if="files.length"
-      class="px-4 py-2 border-b border-gray-200 dark:border-gray-800 bg-gray-50/60 dark:bg-gray-950/40 flex flex-wrap items-center gap-2"
+      v-if="sortedFiles.length"
+      class="sticky top-0 z-20 bg-white/95 dark:bg-gray-900/95 backdrop-blur border-b border-gray-200 dark:border-gray-800"
     >
-      <span class="text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">
-        {{ t('files.title') }}
-      </span>
-      <span class="text-xs text-gray-500 dark:text-gray-400">
-        {{ t('files.summary', { total: files.length, added: statusCounts.added, modified: statusCounts.modified, deleted: statusCounts.deleted }) }}
-      </span>
-      <span class="flex-1"></span>
-      <div class="flex items-center gap-1" role="tablist">
+      <div class="px-4 py-2 flex items-center gap-2 flex-wrap">
+        <span class="text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400 shrink-0">
+          {{ t('files.title') }}
+        </span>
+        <span class="text-xs text-gray-500 dark:text-gray-400 shrink-0">
+          {{ t('files.summary', { total: sortedFiles.length, added: statusCounts.added, modified: statusCounts.modified, deleted: statusCounts.deleted }) }}
+        </span>
+        <span class="flex-1"></span>
+        <button
+          v-if="anyCollapsed"
+          type="button"
+          class="text-[11px] text-indigo-600 dark:text-indigo-400 hover:underline shrink-0"
+          @click="expandAll"
+        >
+          {{ t('files.expandAll') }}
+        </button>
+        <button
+          v-if="anyExpanded"
+          type="button"
+          class="text-[11px] text-gray-500 dark:text-gray-400 hover:underline shrink-0"
+          @click="collapseAll"
+        >
+          {{ t('files.collapseAll') }}
+        </button>
+      </div>
+      <div class="px-4 pb-2 -mx-1 overflow-x-auto code-scroll">
+        <div class="flex items-center gap-1 min-w-max px-1">
+          <button
+            v-for="f in sortedFiles"
+            :key="f.path"
+            type="button"
+            :data-file-tab="f.path"
+            :class="[
+              'flex items-center gap-1.5 rounded-md px-2 py-1 text-xs transition border shrink-0',
+              activeFile === f.path
+                ? 'border-indigo-400 bg-indigo-50 dark:bg-indigo-900/30 text-indigo-700 dark:text-indigo-200 font-medium'
+                : 'border-transparent text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800 hover:border-gray-200 dark:hover:border-gray-700',
+            ]"
+            :title="f.path"
+            @click="gotoFile(f.path)"
+          >
+            <span :class="fileStatusBadge(f.status).cls" :title="fileStatusLabel(f.status, locale.value)">
+              {{ fileStatusBadge(f.status).icon }}
+            </span>
+            <span class="truncate max-w-[200px] font-mono">{{ f.path }}</span>
+            <span
+              v-if="findingsFor(f.path).length"
+              class="text-[10px] bg-gray-200 dark:bg-gray-700 rounded-full px-1.5 shrink-0"
+            >
+              {{ findingsFor(f.path).length }}
+            </span>
+          </button>
+        </div>
+      </div>
+      <div class="px-4 pb-2 flex items-center gap-1">
         <button
           v-for="f in statusFilters"
           :key="f.value"
@@ -45,21 +111,11 @@
       </div>
     </div>
 
-    <!-- The review feed. One <article> per file (filtered by
-         fileStatusFilter). Each article has:
-           1. a clickable header (path + status badge + counts +
-              "expand / collapse" affordance)
-           2. the diff with INLINE findings (one FindingCard right
-              below each diff line that has a finding) -->
+    <!-- The review feed. One <article> per file. Each article has
+         a `data-file-path` so the scroll-spy can identify which
+         file is currently in view and mark the matching tab as
+         active. -->
     <div class="divide-y divide-gray-100 dark:divide-gray-800">
-      <!-- Empty / loading states. The user previously reported
-           "只能看到评审摘要，没看到具体的代码信息" — the most
-           common cause was either (a) the page hadn't scrolled
-           down to the ReviewPanel yet, or (b) the empty state
-           here was too generic and looked like a bug. We now show
-           a clearer hint that points back to the summary, plus
-           a distinct "loading" / "no findings" / "filtered out"
-           copy so the user knows which state they're in. -->
       <div v-if="!findings.length && status !== 'completed'" class="p-6 text-center text-sm text-gray-500 dark:text-gray-400">
         <span v-if="status === 'idle'">{{ t('review.idle') }}</span>
         <span v-else-if="status === 'connecting'" class="inline-flex items-center gap-2">
@@ -90,8 +146,9 @@
       <article
         v-for="f in filteredFiles"
         :key="f.path"
+        :data-file-path="f.path"
         :class="[
-          'bg-white dark:bg-gray-900',
+          'bg-white dark:bg-gray-900 scroll-mt-32',
           activeFile === f.path ? 'ring-1 ring-inset ring-indigo-300 dark:ring-indigo-700' : '',
         ]"
       >
@@ -151,7 +208,7 @@
 </template>
 
 <script setup>
-import { ref, computed, watch } from 'vue'
+import { ref, computed, watch, onMounted, onUnmounted, nextTick } from 'vue'
 import CodeView from './CodeView.vue'
 import { useI18n } from '../i18n/messages.js'
 import { severityLabel, categoryLabel, fileStatusBadge, fileStatusLabel, FILE_STATUS_ORDER } from '../utils/format.js'
@@ -170,11 +227,6 @@ const fileStatusFilter = ref('all')
 const activeFile = ref(null)
 const collapsedFiles = ref(new Set())
 
-// Find findings for a given file path. Applies the severity /
-// category filters so a file with no findings-after-filter is
-// correctly treated as "no findings to render" (its article stays
-// visible because the file itself is in the review, but no
-// inline notes appear under its diff).
 function findingsFor(path) {
   let list = props.findings.filter((f) => f.file_path === path)
   if (props.filterSeverity) list = list.filter((f) => f.severity === props.filterSeverity)
@@ -219,11 +271,38 @@ const filteredFiles = computed(() => {
   return sortedFiles.value.filter((f) => f.status === fileStatusFilter.value)
 })
 
-// As soon as a new review arrives, auto-expand the first changed
-// file (the "interesting" one — not unchanged). This primes the
-// review feed so the reader sees a useful default state on first
-// load. We also auto-select it so `activeFile` is set for the
-// jump-to-line scroll-into-view logic.
+const anyCollapsed = computed(() => collapsedFiles.value.size > 0)
+const anyExpanded = computed(() => {
+  for (const f of filteredFiles.value) {
+    if (!collapsedFiles.value.has(f.path)) return true
+  }
+  return false
+})
+
+function expandAll() {
+  collapsedFiles.value = new Set()
+}
+function collapseAll() {
+  collapsedFiles.value = new Set(filteredFiles.value.map((f) => f.path))
+}
+
+function gotoFile(path) {
+  activeFile.value = path
+  // Clear collapsed state for the target so the user actually
+  // sees something when they jump to a file via the tab bar.
+  collapsedFiles.value.delete(path)
+  nextTick(() => {
+    const el = document.querySelector(`article[data-file-path="${CSS.escape(path)}"]`)
+    if (!el) return
+    // The sticky tab bar is ~120px tall; offset by that much so
+    // the file header doesn't sit flush under the bar.
+    const rect = el.getBoundingClientRect()
+    const targetY = (window.scrollY || 0) + rect.top - 128
+    try { window.scrollTo({ top: targetY, behavior: 'smooth' }) }
+    catch { window.scrollTo(0, targetY) }
+  })
+}
+
 watch(
   () => props.files,
   (list) => {
@@ -245,17 +324,68 @@ watch(
   { immediate: true }
 )
 
+// Scroll-spy: IntersectionObserver that updates `activeFile` to
+// whichever file's article is closest to the top of the viewport.
+// Keeps the tab bar in sync with what the user is reading.
+let _scrollObserver = null
+function setupScrollSpy() {
+  if (typeof IntersectionObserver === 'undefined') return
+  _scrollObserver = new IntersectionObserver(
+    (entries) => {
+      // Pick the entry that's closest to the top of the viewport
+      // (smallest non-negative boundingClientRect.top) so the tab
+      // bar reflects the file the user is actually reading.
+      const visible = entries
+        .filter((e) => e.isIntersecting)
+        .sort((a, b) => a.boundingClientRect.top - b.boundingClientRect.top)
+      if (visible.length && visible[0].target.dataset.filePath) {
+        activeFile.value = visible[0].target.dataset.filePath
+      }
+    },
+    {
+      // Trigger when the article's top edge crosses the sticky
+      // tab bar (~120px) and the bottom of the viewport. The
+      // bottom margin (rootMargin) means: consider the article
+      // "in view" when its top is between 120px from the top of
+      // the viewport and 50% from the bottom.
+      rootMargin: '-120px 0px -50% 0px',
+      threshold: 0,
+    }
+  )
+  // Observe every article's header. The articles are re-rendered
+  // when files change; we re-attach the observer each time.
+  for (const a of document.querySelectorAll('article[data-file-path]')) {
+    _scrollObserver.observe(a)
+  }
+}
+
+onMounted(() => {
+  // Wait one tick so the articles are in the DOM.
+  nextTick(setupScrollSpy)
+})
+onUnmounted(() => {
+  _scrollObserver?.disconnect()
+})
+
+// Re-attach the observer when the file list changes (e.g. new
+// findings arrive, or the user toggles the status filter). We
+// watch the filtered list length rather than the array reference
+// so a no-op update doesn't tear down the observer.
+watch(
+  () => filteredFiles.value.map((f) => f.path).join('|'),
+  () => {
+    _scrollObserver?.disconnect()
+    nextTick(setupScrollSpy)
+  }
+)
+
 function locate(f) {
   if (!f) return
   if (f.file_path) {
     activeFile.value = f.file_path
-    // Auto-expand the target file in case the user had collapsed it.
     collapsedFiles.value.delete(f.file_path)
   }
   if (!f.line_start) return
-  // The CodeView sets `data-line` on each rendered diff line; find
-  // the next-tick DOM node for the file's diff and scroll the
-  // matching line into view.
   setTimeout(() => {
     const articles = document.querySelectorAll('article')
     for (const a of articles) {

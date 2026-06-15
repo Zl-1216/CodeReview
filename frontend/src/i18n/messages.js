@@ -116,6 +116,8 @@ const messages = {
     'files.legendAdded': 'added',
     'files.legendRemoved': 'removed',
     'files.legendContext': 'unchanged context',
+    'files.expandAll': 'Expand all',
+    'files.collapseAll': 'Collapse all',
 
     // ref picker
     'refPicker.branches': 'Branches',
@@ -285,6 +287,8 @@ const messages = {
     'files.legendAdded': '新增',
     'files.legendRemoved': '删除',
     'files.legendContext': '未变上下文',
+    'files.expandAll': '全部展开',
+    'files.collapseAll': '全部折叠',
 
     'refPicker.branches': '分支',
     'refPicker.tags': '标签',

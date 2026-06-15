@@ -115,6 +115,7 @@ describe('i18n messages', () => {
       'files.statusRenamed', 'files.statusUnchanged',
       'files.countBadge', 'files.findingsFor', 'files.noFindings',
       'files.legendAdded', 'files.legendRemoved', 'files.legendContext',
+      'files.expandAll', 'files.collapseAll',
       'refPicker.branches', 'refPicker.tags', 'refPicker.noBranches',
       'refPicker.openPicker', 'refPicker.closePicker',
       'refPicker.openPickerAria', 'refPicker.closePickerAria',
