@@ -565,6 +565,118 @@ def test_size_cap_hides_oversized_entry(tmp_path, monkeypatch):
     assert state.get("oversized") is True
 
 
+# --- _run_git: TimeoutExpired surfaces real stderr -----------------------
+#
+# Regression: when the backend host is behind a transparent SSL
+# interception / proxy, the git subprocess hangs waiting for data,
+# the 300s timeout fires, and the original TimeoutExpired carries
+# stderr like "fatal: ... GnuTLS recv error (-110): non-properly
+# terminated". The old code discarded e.stderr and raised
+# RemoteGitTimeoutError("git command timed out after 300s"), which
+# surfaced to the UI as a 504 with no actionable detail — the user
+# had to guess whether it was the timeout, the proxy, or the URL.
+#
+# Fix: capture e.stderr, build a wrapper message that includes it,
+# and feed the message to the classifier so a network-marker stderr
+# gets reclassified as RemoteGitNetworkError (with the proxy/SSH
+# hint the i18n layer is already wired to render).
+
+
+def test_run_git_timeout_with_gnutls_stderr_raises_network_error(monkeypatch, tmp_path):
+    import subprocess as _subprocess
+
+    real_exc = _subprocess.TimeoutExpired(
+        cmd=["git", "clone", "https://github.com/o/r"],
+        timeout=300,
+        output="",
+        stderr=(
+            "Cloning into '/tmp/x'...\n"
+            "fatal: unable to access 'https://github.com/o/r/': "
+            "GnuTLS recv error (-110): The TLS connection was non-properly terminated.\n"
+        ),
+    )
+
+    def _raise(*_a, **_k):
+        raise real_exc
+
+    monkeypatch.setattr(git_remote.subprocess, "run", _raise)
+
+    cache = git_remote.RemoteCache()
+    with pytest.raises(git_remote.RemoteGitNetworkError) as ei:
+        cache._run_git(["clone", "https://github.com/o/r"], cwd=tmp_path)
+    # The gnutls detail must be visible in the raised message so the
+    # user (and the i18n hint) can see *why* it timed out.
+    msg = str(ei.value)
+    assert "GnuTLS" in msg
+    # The classifier appends the proxy/SSH hint for network errors.
+    assert "GIT_HTTPS_PROXY" in msg or "proxy" in msg.lower()
+
+
+def test_run_git_timeout_with_connection_timed_out_stderr_raises_network(monkeypatch, tmp_path):
+    """`Connection timed out` from git is a network marker (TCP SYN
+    never got ACK'd, usually a firewall) — reclassify so the user
+    gets the proxy/SSH hint, not a bare 504 timeout."""
+    import subprocess as _subprocess
+
+    real_exc = _subprocess.TimeoutExpired(
+        cmd=["git", "fetch", "origin"],
+        timeout=300,
+        output="",
+        stderr=(
+            "fatal: unable to access 'https://github.com/o/r/': "
+            "Connection timed out\n"
+        ),
+    )
+
+    def _raise(*_a, **_k):
+        raise real_exc
+
+    monkeypatch.setattr(git_remote.subprocess, "run", _raise)
+
+    cache = git_remote.RemoteCache()
+    with pytest.raises(git_remote.RemoteGitNetworkError):
+        cache._run_git(["fetch", "origin"], cwd=tmp_path)
+
+
+def test_run_git_timeout_with_empty_stderr_preserves_timeout(monkeypatch, tmp_path):
+    """If git was killed before producing any stderr (silent hang,
+    wedged in a syscall), the only honest answer is 'we timed out
+    with no idea why'. RemoteGitTimeoutError preserves the existing
+    504 / 'increase the timeout' remediation."""
+    import subprocess as _subprocess
+
+    real_exc = _subprocess.TimeoutExpired(
+        cmd=["git", "clone", "https://github.com/o/r"],
+        timeout=300,
+    )
+
+    def _raise(*_a, **_k):
+        raise real_exc
+
+    monkeypatch.setattr(git_remote.subprocess, "run", _raise)
+
+    cache = git_remote.RemoteCache()
+    with pytest.raises(git_remote.RemoteGitTimeoutError) as ei:
+        cache._run_git(["clone", "https://github.com/o/r"], cwd=tmp_path)
+    assert "timed out" in str(ei.value).lower()
+
+
+def test_classify_network_marker_beats_timed_out():
+    """A message that contains BOTH 'timed out' (e.g. as a wrapper
+    from a TimeoutExpired) and a network marker (gnutls / connection
+    timed out / etc.) should be classified as a network error — the
+    network marker is the more specific signal. Reordering the
+    classifier to check network markers before 'timed out' is what
+    makes the TimeoutExpired reclassification above work."""
+    base = git_remote.RemoteGitError(
+        "git command timed out after 300s — last output: "
+        "fatal: unable to access 'https://github.com/o/r/': "
+        "GnuTLS recv error (-110): non-properly terminated."
+    )
+    with pytest.raises(git_remote.RemoteGitNetworkError):
+        git_remote.RemoteCache._classify_and_raise(base, masked_url="…")
+
+
 # --- Stale lock recovery --------------------------------------------------
 
 

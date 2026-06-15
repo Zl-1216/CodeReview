@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest'
-import { getApiKey, setApiKey, clearApiKey } from './api.js'
+import { getApiKey, setApiKey, clearApiKey, api } from './api.js'
 
 describe('api.js — API key storage', () => {
   beforeEach(() => {
@@ -58,5 +58,65 @@ describe('api.js — API key storage', () => {
     expect(() => setApiKey(null)).not.toThrow()
     expect(() => setApiKey(undefined)).not.toThrow()
     expect(() => clearApiKey()).not.toThrow()
+  })
+})
+
+describe('api.js — request() error contract', () => {
+  // The remote-git flow needs to distinguish a 504 (clone timeout —
+  // the user should be told "the repo is large / connection is slow,
+  // ask the operator to raise REMOTE_GIT_CLONE_TIMEOUT") from a 502
+  // (network / proxy / TLS — the user should be told "fix the proxy
+  // or switch to SSH"). The backend already returns the right status
+  // for each branch of _classify_and_raise, so the client just needs
+  // the status to survive onto the thrown Error. This used to be
+  // dropped — only the .message string was kept — and the UI had to
+  // regex the message to tell the cases apart, which was both fragile
+  // and easy to false-match (the timeout wrapper contains the substring
+  // 'timed out', which the network regex also matched, hiding the
+  // real cause).
+  it('attaches the HTTP status to the thrown Error', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () =>
+        new Response(
+          JSON.stringify({ detail: 'git command timed out after 300s' }),
+          { status: 504, statusText: 'Gateway Timeout' },
+        ),
+      ),
+    )
+    try {
+      await api.health()
+      expect.fail('expected request to throw')
+    } catch (e) {
+      expect(e).toBeInstanceOf(Error)
+      expect(e.message).toContain('timed out')
+      expect(e.status).toBe(504)
+    } finally {
+      vi.unstubAllGlobals()
+    }
+  })
+
+  it('attaches a non-2xx status (e.g. 502) the same way', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () =>
+        new Response(
+          JSON.stringify({
+            detail:
+              "fatal: ... GnuTLS recv error (-110) ... — Network error reaching the remote.",
+          }),
+          { status: 502, statusText: 'Bad Gateway' },
+        ),
+      ),
+    )
+    try {
+      await api.health()
+      expect.fail('expected request to throw')
+    } catch (e) {
+      expect(e.status).toBe(502)
+      expect(e.message).toContain('Network error')
+    } finally {
+      vi.unstubAllGlobals()
+    }
   })
 })

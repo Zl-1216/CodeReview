@@ -123,7 +123,14 @@ async function request(path, { timeoutMs = DEFAULT_TIMEOUT_MS, ...options } = {}
     // that could also be a permission policy (rate limit) rather than
     // an auth issue.
     if (resp.status === 401 && apiKey) clearApiKey()
-    throw new Error(detail)
+    // Attach the HTTP status so callers can branch on the failure
+    // mode (e.g. 504 timeout vs 502 network) without re-parsing the
+    // human-readable message string. Kept as a plain property on the
+    // Error — any await / catch code that only reads `.message` keeps
+    // working unchanged.
+    const err = new Error(detail)
+    err.status = resp.status
+    throw err
   }
   if (resp.status === 204) return null
   return resp.json()

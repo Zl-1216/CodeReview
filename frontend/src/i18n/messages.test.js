@@ -107,7 +107,7 @@ describe('i18n messages', () => {
       'input.apiKeySave', 'input.apiKeySet', 'input.apiKeyClear',
       'input.apiKeyShow', 'input.apiKeyHide',
       'input.apiKeyPersistFailed', 'input.apiKeyWasInvalid',
-      'input.remoteNetworkErrorHint',
+      'input.remoteNetworkErrorHint', 'input.remoteTimeoutHint',
 
       'files.title', 'files.summary',
       'files.filterAll', 'files.filterAdded', 'files.filterModified', 'files.filterDeleted',

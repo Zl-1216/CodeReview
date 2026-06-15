@@ -713,12 +713,6 @@ class RemoteCache:
         persist a half-baked state.json)."""
         msg = str(exc)
         low = msg.lower()
-        if "could not read username" in low or "authentication failed" in low or "invalid username or password" in low:
-            raise RemoteGitAuthError(msg) from exc
-        if "not found" in low or "repository not found" in low or "not exist" in low:
-            raise RemoteGitNotFoundError(msg) from exc
-        if "timed out" in low or "timeout" in low:
-            raise RemoteGitTimeoutError(msg) from exc
         # Network-layer failures. These are all the same shape from the
         # UI's perspective: the host is DNS-resolvable but the TLS / TCP
         # handshake isn't completing. Common culprits: corporate proxy
@@ -726,6 +720,11 @@ class RemoteCache:
         # expired ca-certificates bundle, or a transparent MITM that
         # mangles the handshake (which is what produces the GnuTLS
         # "non-properly terminated" message in the user's report).
+        #
+        # Markers are checked FIRST (before 'timed out' below) so a
+        # wrapper like "git command timed out after 300s — last output:
+        # ... GnuTLS ..." gets the actionable network hint rather than
+        # the generic 504 timeout, which is the catch-all.
         network_markers = (
             "gnutls", "non-properly terminated", "connection reset",
             "connection refused", "connection timed out",
@@ -741,6 +740,12 @@ class RemoteCache:
                 "starting the backend, or use an SSH URL."
             )
             raise RemoteGitNetworkError(f"{msg} — {hint}") from exc
+        if "could not read username" in low or "authentication failed" in low or "invalid username or password" in low:
+            raise RemoteGitAuthError(msg) from exc
+        if "not found" in low or "repository not found" in low or "not exist" in low:
+            raise RemoteGitNotFoundError(msg) from exc
+        if "timed out" in low or "timeout" in low:
+            raise RemoteGitTimeoutError(msg) from exc
         # Otherwise: re-raise the same exception so the caller still sees
         # the failure. The warning is purely diagnostic.
         logger.warning("git remote op failed for %s: %s", masked_url, msg)
@@ -875,9 +880,24 @@ class RemoteCache:
                 check=False,
             )
         except subprocess.TimeoutExpired as e:
-            raise RemoteGitTimeoutError(
-                f"git command timed out after {config.REMOTE_GIT_CLONE_TIMEOUT}s"
-            ) from e
+            # The stderr (if any) is what git was saying when the
+            # timeout fired. It's the only diagnostic we have for a
+            # wedged child, and it's the difference between "your
+            # repo is too slow, raise the timeout" and "your network
+            # is broken, fix the proxy". Feed it to the classifier so
+            # a network-marker stderr gets reclassified with the
+            # actionable hint instead of a bare 504 timeout.
+            #
+            # `e.stderr` is a str (text=True) or None when the child
+            # was killed before producing anything.
+            last = (e.stderr or "").strip() if isinstance(e.stderr, str) else ""
+            base = f"git command timed out after {config.REMOTE_GIT_CLONE_TIMEOUT}s"
+            full = f"{base} — last output: {last}" if last else base
+            # Classify ALWAYS raises — we just let the chosen subclass
+            # bubble. With no captured stderr, the only honest answer
+            # is the timeout error itself, which the catch-all branch
+            # of the classifier will produce.
+            self._classify_and_raise(RemoteGitError(full), masked_url="")
         except OSError as e:
             raise RemoteGitError(f"failed to run git: {e}") from e
         if proc.returncode != 0:

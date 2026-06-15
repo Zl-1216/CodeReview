@@ -203,7 +203,8 @@
         />
         <div v-if="remoteError" class="rounded-md border border-red-200 dark:border-red-800/50 bg-red-50 dark:bg-red-900/20 p-2 text-xs text-red-700 dark:text-red-300 space-y-1">
           <div>{{ remoteError }}</div>
-          <div v-if="isNetworkError">{{ t('input.remoteNetworkErrorHint') }}</div>
+          <div v-if="isRemoteTimeoutError">{{ t('input.remoteTimeoutHint') }}</div>
+          <div v-else-if="isNetworkError">{{ t('input.remoteNetworkErrorHint') }}</div>
         </div>
         <button
           type="button"
@@ -408,6 +409,14 @@ const remoteBranches = ref([])
 const remoteTags = ref([])
 const connecting = ref(false)
 const remoteError = ref(null)
+// HTTP status of the last /api/git/remote/clone (or related) failure.
+// Kept in lockstep with `remoteError` so the error-class computeds
+// below can branch on the actual response status (502 = network,
+// 504 = timeout) rather than re-parse the human-readable message —
+// the message may legitimately contain "timed out" AND a gnutls
+// marker when a subprocess timeout reclassified a network failure,
+// which would otherwise fall into both buckets.
+const remoteErrorStatus = ref(null)
 
 // --- API key (Review/Upload/Remote writes) ------------------------------
 // When the server is configured with REVIEW_API_KEY, every write needs
@@ -541,14 +550,29 @@ watch(focuses, (val) => {
 
 const canPreview = computed(() => gitBase.value.trim() && gitHead.value.trim())
 const canConnect = computed(() => remoteUrl.value.trim().length > 5)
-// True when the last /api/git/remote/clone failure looks like a network
-// problem (TLS / proxy / connection refused) rather than a logical
-// error. The backend now annotates these with the '— Network error…'
-// suffix via RemoteGitNetworkError, so we just look for that prefix.
-const isNetworkError = computed(() =>
-  typeof remoteError.value === 'string' &&
-  /Network error|gnutls|non-properly terminated|timed out|connection (refused|reset|timed out)|proxy/i.test(remoteError.value)
-)
+// True when the last /api/git/remote/clone failure is a backend
+// timeout (HTTP 504 → RemoteGitTimeoutError). Distinct from
+// `isNetworkError` so the user gets a different hint: a 504 means
+// the clone ran for the full REMOTE_GIT_CLONE_TIMEOUT without
+// finishing — the repo is large or the connection is slow — whereas
+// a 502 means git gave up because it couldn't reach the host. Both
+// are caused by the backend's environment, not by the user's input,
+// but the remediation is different (raise the timeout vs fix the
+// proxy / switch to SSH).
+const isRemoteTimeoutError = computed(() => remoteErrorStatus.value === 504)
+// True when the failure is a network / TLS / proxy problem (HTTP 502
+// → RemoteGitNetworkError). The status code is the source of truth
+// — the regex fallback is for the rare case where `.status` was
+// dropped by an older wrapper, so we still surface a useful hint
+// instead of nothing.
+const isNetworkError = computed(() => {
+  if (remoteErrorStatus.value === 502) return true
+  if (remoteErrorStatus.value === 504) return false
+  if (typeof remoteError.value !== 'string') return false
+  return /Network error|gnutls|non-properly terminated|connection (refused|reset|timed out)|proxy/i.test(
+    remoteError.value,
+  )
+})
 const canSubmit = computed(() => {
   if (mode.value === 'snippet') return snippetContent.value.trim().length > 0
   if (mode.value === 'diff') return diffText.value.trim().length > 0 && parsedFiles.value.length > 0
@@ -701,12 +725,14 @@ async function connectRemote() {
   if (!canConnect.value) return
   connecting.value = true
   remoteError.value = null
+  remoteErrorStatus.value = null
   try {
     const s = await api.gitRemoteClone({ url: remoteUrl.value, token: remoteToken.value })
     remoteId.value = s.id
     _setRemoteFromStatus(s)
   } catch (e) {
     remoteError.value = e.message
+    remoteErrorStatus.value = e.status ?? null
   } finally {
     connecting.value = false
   }
@@ -716,11 +742,13 @@ async function refreshRemote() {
   if (!remoteId.value) return
   connecting.value = true
   remoteError.value = null
+  remoteErrorStatus.value = null
   try {
     const s = await api.gitRemoteClone({ url: remoteUrl.value, token: remoteToken.value, refresh: true })
     _setRemoteFromStatus(s)
   } catch (e) {
     remoteError.value = e.message
+    remoteErrorStatus.value = e.status ?? null
   } finally {
     connecting.value = false
   }
@@ -748,6 +776,7 @@ async function disconnectRemote() {
   remoteBranches.value = []
   remoteTags.value = []
   remoteError.value = null
+  remoteErrorStatus.value = null
   // Drop any preview we computed against the old remote
   previewFiles.value = []
   previewSummary.value = null

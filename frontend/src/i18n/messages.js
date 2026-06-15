@@ -96,6 +96,7 @@ const messages = {
     // (firewall, proxy, sandbox). The backend annotates the message
     // with this prefix so the UI can offer a one-click recovery.
     'input.remoteNetworkErrorHint': 'Hint: the backend host may be behind a firewall / proxy / sandbox without HTTPS egress. Set GIT_HTTPS_PROXY and restart the backend, or use an SSH URL.',
+    'input.remoteTimeoutHint': "Hint: the remote did not respond within the backend's clone timeout (default 300s). The repository may be very large, or the connection may be slow. If this keeps happening, ask the operator to raise REMOTE_GIT_CLONE_TIMEOUT in the backend's environment.",
 
     // I5: review-result file / diff visualisation
     'files.title': 'Files changed',
@@ -265,6 +266,7 @@ const messages = {
     'input.apiKeyPersistFailed': 'localStorage 不可用 (隐私模式?) — 刷新页面后 key 会丢失。',
     'input.apiKeyWasInvalid': '上一次的 key 被服务器拒绝 (HTTP 401)。请确认它和后端的 REVIEW_API_KEY 完全一致 —— 注意它不是 Anthropic / OpenAI 的 LLM key。',
     'input.remoteNetworkErrorHint': '提示：后端机器可能处于防火墙 / 代理 / 沙箱环境,无法访问外网 HTTPS。可以设置 GIT_HTTPS_PROXY 重启后端,或改用 SSH URL。',
+    'input.remoteTimeoutHint': '提示：远端在超时时间内没有响应（默认 300s）。可能是仓库太大或网络较慢。如果持续出现,请联系运维调高后端的 REMOTE_GIT_CLONE_TIMEOUT 环境变量。',
 
     'files.title': '变更文件',
     'files.summary': '共 {total} 个文件变更 — 新增 {added},修改 {modified},删除 {deleted}',
