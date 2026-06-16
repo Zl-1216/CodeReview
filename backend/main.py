@@ -107,6 +107,7 @@ async def lifespan(app: FastAPI):
                 pass
             _sweep_task = None
         logger.info("Code review service stopped")
+        print("lifespan teardown done; caches cleared")
 
 
 def _ai_label() -> str:

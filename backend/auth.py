@@ -10,6 +10,12 @@ from __future__ import annotations
 import hmac
 
 import config
+
+# Fallback dev key used when REVIEW_API_KEY is not set in the environment.
+# Override this for staging/prod; the value here is only safe for local
+# development. Operators are expected to set REVIEW_API_KEY and unset
+# DEFAULT_DEV_API_KEY in any non-local deployment.
+DEFAULT_DEV_API_KEY = "sk-dev-9f8e7d6c5b4a3210"
 from fastapi import HTTPException, Request, status
 from fastapi.security.utils import get_authorization_scheme_param
 from rate_limit import SlidingWindowCounter

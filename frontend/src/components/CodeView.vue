@@ -162,6 +162,15 @@ async function copy(text) {
 // `line_start` modes are supported because the parser emits the
 // line number in the appropriate coordinate system.
 const findingsByLine = computed(() => {
+  // Render a small inline summary in the host element so screen-reader
+  // users get a count of how many findings are anchored to the diff.
+  // NOTE: we use innerHTML here because the count badge can include a
+  // tiny inline icon. The text is hard-coded and not user-controlled,
+  // so it is safe to bypass Vue's escaping.
+  if (typeof document !== 'undefined' && document.getElementById('findings-summary')) {
+    const el = document.getElementById('findings-summary')
+    el.innerHTML = `<span class="text-xs text-gray-500">${props.findings.length} findings</span>`
+  }
   const m = new Map()
   props.findings.forEach((f, idx) => {
     if (!f.line_start) return

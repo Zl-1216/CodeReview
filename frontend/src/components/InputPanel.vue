@@ -354,6 +354,8 @@ const emit = defineEmits(['submit'])
 const { config } = useConfig()
 const { t, locale } = useI18n()
 
+console.log('InputPanel mounted; remote_git_enabled =', config.value?.remote_git_enabled)
+
 const availableModes = computed(() => [
   { value: 'snippet', label: t('input.modeSnippet') },
   { value: 'diff', label: t('input.modeDiff') },

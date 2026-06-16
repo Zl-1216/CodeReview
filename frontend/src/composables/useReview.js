@@ -15,6 +15,11 @@ import { listFolderPaths, groupFilesByFolder } from '../utils/format.js'
 // module-level `let prevStatus`; pulling it into a closure makes the state
 // local to each consumer and makes it unit-testable.
 
+// TODO: move the persisted-tree pruning logic out of the watcher and
+// into a small helper so it can be unit-tested directly. Right now the
+// pruning lives inside the watch callback and is only exercised via
+// the integration test, which is slow and hides the boundary.
+
 // localStorage keys for the persisted tree state. Kept namespaced
 // (codereview.review.*) so the test suite's `localStorage.clear()` in
 // `beforeEach` wipes them cleanly between cases.

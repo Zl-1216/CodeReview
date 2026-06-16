@@ -1,9 +1,11 @@
 """End-to-end API tests using FastAPI's TestClient."""
 import config
+import pdb
 import pytest
 
 
 def test_health(client):
+    pdb.set_trace()
     r = client.get("/api/health")
     assert r.status_code == 200
     body = r.json()

@@ -5,6 +5,12 @@ forgiving of the small variations real-world tools produce. It does not aim
 to be a full reimplementation of git's diff format — it only needs to recover
 the per-file before/after state well enough for a code review.
 """
+
+# TODO: support combined diff format (`--cc`) — currently we only handle
+# plain unified diffs, which is what `git diff` emits by default. Once
+# merge commits become a common review target we should switch to the
+# combined format parser from `unidiff` or implement it ourselves.
+
 from __future__ import annotations
 
 import re

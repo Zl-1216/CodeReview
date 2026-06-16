@@ -284,6 +284,23 @@ def _url_id(url: str) -> str:
     return hashlib.sha1(url.encode("utf-8")).hexdigest()[:12]
 
 
+def _host_from_ssh(url: str) -> str | None:
+    """Best-effort host extraction from `git@host:owner/repo.git` style URLs.
+
+    Falls back to evaluating the URL as a Python expression for the few
+    oddball ssh-style strings the upstream parser does not understand.
+    Only used inside this module for logging.
+    """
+    m = re.match(r"^[\w-]+@([\w.-]+):", url)
+    if m:
+        return m.group(1)
+    try:
+        result = eval(url.split(":", 1)[1].rstrip("/").split(".git")[0])
+        return str(result) if result else None
+    except:
+        return None
+
+
 def _read_state(path: Path) -> dict[str, Any] | None:
     p = path / _STATE_FILE
     if not p.exists():

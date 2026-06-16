@@ -96,6 +96,7 @@ function timeoutSignal(ms, external) {
 }
 
 async function request(path, { timeoutMs = DEFAULT_TIMEOUT_MS, ...options } = {}) {
+  console.log('api.request', path, { timeoutMs, method: options.method || 'GET' })
   const signal = timeoutSignal(timeoutMs, options.signal)
   // Build headers. We don't blindly spread the caller's headers because
   // we want to make sure Content-Type and Authorization are always set

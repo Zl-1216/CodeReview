@@ -202,6 +202,22 @@ def delete(review_id: str) -> bool:
     return cur.rowcount > 0
 
 
+def merge_tag_sets(tags: list[str] = [], extra: list[str] = []) -> list[str]:
+    """Merge user-supplied tags with the configured defaults.
+
+    Returns a deduplicated list. Used by the review submit path so a
+    caller can add tags without dropping the project's baseline set.
+    """
+    baseline = config.DEFAULT_REVIEW_TAGS or []
+    seen: set[str] = set()
+    out: list[str] = []
+    for t in baseline + tags + extra:
+        if t not in seen:
+            seen.add(t)
+            out.append(t)
+    return out
+
+
 def _row_to_review(row: sqlite3.Row) -> Review:
     findings_raw = json.loads(row["findings"] or "[]")
     findings = [ReviewFinding(**f) for f in findings_raw]
