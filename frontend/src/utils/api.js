@@ -9,7 +9,6 @@ const BASE = import.meta?.env?.VITE_API_BASE || '/api'
 // caps the *network* wait, not the review itself.
 const DEFAULT_TIMEOUT_MS = 30_000
 const SUBMIT_TIMEOUT_MS = 30_000
-const UPLOAD_TIMEOUT_MS = 60_000
 
 // --- API key handling -----------------------------------------------------
 // When the server is configured with REVIEW_API_KEY, every write
@@ -165,45 +164,13 @@ export const api = {
       timeoutMs: SUBMIT_TIMEOUT_MS,
     })
   },
-  parseDiff(diff) {
-    return request('/diff/parse', { method: 'POST', body: JSON.stringify({ diff }) })
-  },
-  uploadFile(file) {
-    const form = new FormData()
-    form.append('file', file)
-    const signal = timeoutSignal(UPLOAD_TIMEOUT_MS)
-    return fetch(BASE + '/upload', { method: 'POST', body: form, signal }).then(async (r) => {
-      if (!r.ok) {
-        let detail = `${r.status} ${r.statusText}`
-        try {
-          detail = (await r.json()).detail || detail
-        } catch {}
-        throw new Error(detail)
-      }
-      return r.json()
-    })
-  },
-  // --- Git integration ------------------------------------------------
-  gitStatus() {
-    return request('/git/status')
-  },
-  gitBranches() {
-    return request('/git/branches')
-  },
-  gitTags() {
-    return request('/git/tags')
-  },
-  gitDiff({ base, head, path }) {
-    return request('/git/diff', {
-      method: 'POST',
-      body: JSON.stringify({ base, head, path: path || null }),
-    })
-  },
   // --- Remote git integration ----------------------------------------
-  // Clone (or refresh) a user-supplied remote repo on the server. The
-  // returned `id` is a sha1-derived 12-char token; the same URL on
-  // subsequent calls will hit the cache and skip the network round-trip
-  // when within REMOTE_GIT_CACHE_TTL.
+  // The only input mode the UI supports: the user pastes a URL (+ optional
+  // token), the server clones / fetches a shallow copy under
+  // REMOTE_GIT_CACHE_DIR, and the user picks branches from the picker.
+  // The returned `id` is a sha1-derived 12-char token; the same URL on
+  // subsequent calls hits the cache and (since the staleness fix) does
+  // a cheap refs-only fetch so newly-pushed branches show up right away.
   gitRemoteClone({ url, token, refresh = false }) {
     return request('/git/remote/clone', {
       method: 'POST',

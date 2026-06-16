@@ -1,9 +1,14 @@
-"""Git integration: list branches, run `git diff`, parse the result.
+"""Git diff helper used by the remote-repo review flow.
 
-The git command is run as a subprocess against a configured repo path
-(`REPO_PATH`). Refs are passed positionally to `git diff` so shell
-metacharacters in user input cannot be interpreted — we use `shlex.split`
-on the diff output but never on the input.
+`diff_refs()` runs `git diff base...head` (or `base..head` for the
+shallow remote cache) against a working tree at `cwd` and returns the
+parsed files. This is the only function left from the old
+local-git module after the local-git UI was removed; the
+`/api/git/remote/{id}/diff` endpoint in `main.py` is its sole
+caller.
+
+Refs are passed positionally to `git diff` so shell metacharacters in
+user input cannot be interpreted — we never shell-parse the input.
 """
 from __future__ import annotations
 
@@ -28,8 +33,6 @@ class GitError(Exception):
     """Raised when a git operation fails in a way the UI should surface."""
 
 
-# --- Refs ------------------------------------------------------------------
-
 def _validate_ref(label: str, ref: str) -> str:
     ref = (ref or "").strip()
     if not ref:
@@ -41,36 +44,17 @@ def _validate_ref(label: str, ref: str) -> str:
     return ref
 
 
-# --- Command runner --------------------------------------------------------
-
-def _run_git(args: list[str], cwd: Path | None = None) -> str:
-    """Run a git command and return stdout. Raise GitError on non-zero exit.
-
-    When `cwd` is provided, run in that directory (used by the remote-git
-    cache). When None, fall back to the configured `config.REPO_PATH` —
-    the legacy single-repo mode — and require it to be set.
-    """
-    if cwd is not None:
-        repo = cwd
-    else:
-        if not config.REPO_PATH:
-            raise GitError("Git integration is disabled (REPO_PATH not set)")
-        repo = Path(config.REPO_PATH)
-    if not repo.exists():
-        raise GitError(f"Repo path does not exist: {repo}")
-    if not (repo / ".git").exists() and not (repo / ".git").is_file():
-        raise GitError(f"Not a git repo: {repo}")
-
+def _run_git(args: list[str], cwd: Path) -> str:
+    """Run a git command in `cwd` and capture stdout."""
     if shutil.which("git") is None:
         raise GitError("git binary not found on PATH")
-
     try:
         proc = subprocess.run(
             ["git", *args],
-            cwd=str(repo),
+            cwd=str(cwd),
             capture_output=True,
             text=True,
-            timeout=config.GIT_TIMEOUT,
+            timeout=config.REMOTE_GIT_CLONE_TIMEOUT,
             check=False,
         )
     except subprocess.TimeoutExpired as e:
@@ -80,81 +64,12 @@ def _run_git(args: list[str], cwd: Path | None = None) -> str:
 
     if proc.returncode != 0:
         stderr = (proc.stderr or "").strip()
-        # Surface the most common errors in a form that's useful in the UI.
         if "unknown revision" in stderr or "bad revision" in stderr:
             raise GitError(f"Unknown ref: {stderr.splitlines()[0] if stderr else 'ref not found'}")
         if "fatal: ambiguous" in stderr:
             raise GitError(f"Ambiguous ref: {stderr.splitlines()[0] if stderr else 'ambiguous'}")
         raise GitError(stderr or f"git exited with status {proc.returncode}")
     return proc.stdout
-
-
-# --- Public API ------------------------------------------------------------
-
-def get_repo_info() -> dict:
-    """Return metadata about the configured repo. Always succeeds for a valid repo."""
-    repo = Path(config.REPO_PATH)
-    if not config.REPO_PATH or not repo.exists() or not (repo / ".git").exists():
-        return {"configured": False, "path": config.REPO_PATH or ""}
-
-    head = _run_git(["rev-parse", "--abbrev-ref", "HEAD"], cwd=repo).strip()
-    head_sha = _run_git(["rev-parse", "--short", "HEAD"], cwd=repo).strip()
-    dirty = bool(_run_git(["status", "--porcelain"], cwd=repo).strip())
-    # Default branch: prefer HEAD~1 if it has a name (i.e. we are not on the
-    # root commit). Otherwise look for a "main" or "master" branch. As a last
-    # resort, return HEAD.
-    default_branch = "main"
-    branches_raw = _run_git(["branch", "--format=%(refname:short)"], cwd=repo)
-    branch_names = {b.strip() for b in branches_raw.splitlines() if b.strip()}
-    for candidate in ("main", "master", "trunk", "develop"):
-        if candidate in branch_names:
-            default_branch = candidate
-            break
-    else:
-        if branch_names:
-            # fall back to whichever branch is checked out, or first
-            default_branch = head or sorted(branch_names)[0]
-    return {
-        "configured": True,
-        "path": str(repo),
-        "head": head,
-        "head_sha": head_sha,
-        "default_branch": default_branch,
-        "dirty": dirty,
-        "branches": sorted(branch_names),
-    }
-
-
-def list_branches() -> list[dict]:
-    """Return local branches with their HEAD commit. Sorted by name."""
-    out = _run_git(["for-each-ref", "--format=%(refname:short)|%(objectname:short)|%(subject)", "refs/heads/"])
-    branches: list[dict] = []
-    for line in out.splitlines():
-        line = line.strip()
-        if not line:
-            continue
-        parts = line.split("|", 2)
-        if len(parts) < 3:
-            continue
-        name, sha, subject = parts
-        branches.append({"name": name, "sha": sha, "subject": subject.strip()})
-    branches.sort(key=lambda b: b["name"])
-    return branches
-
-
-def list_tags() -> list[dict]:
-    """Return local tags (capped to 50 most recent)."""
-    out = _run_git(["for-each-ref", "--sort=-creatordate", "--format=%(refname:short)|%(objectname:short)", "refs/tags/"])
-    tags: list[dict] = []
-    for line in out.splitlines()[:50]:
-        line = line.strip()
-        if not line:
-            continue
-        parts = line.split("|", 1)
-        if len(parts) != 2:
-            continue
-        tags.append({"name": parts[0], "sha": parts[1]})
-    return tags
 
 
 def _strip_binary_blocks(raw: str) -> tuple[str, int]:
@@ -213,24 +128,13 @@ def diff_refs(base: str, head: str, path: str | None = None, cwd: Path | None = 
         "no merge base". The remote endpoint passes
         `use_three_dot=False` for exactly this reason.
 
-    The single-line summary (`--stat`) and the full diff
-    (`-M -C --diff-filter=ACMRT`) are produced in two passes so the
-    caller can show a stat block alongside the parsed files.
-
-    Binary files (which `git diff` renders as `Binary files ... differ`)
-    are stripped from the diff and reported via `binary_skipped`.
-
-    `cwd` lets callers point `git` at a non-default working tree — used
-    by the remote-git cache (git_remote.RemoteCache) where each clone
-    lives under `REVIEW_DATA_DIR/remotes/{hash}/`. When None, falls
-    back to the configured `REPO_PATH` (or raises GitError if that's
-    not set).
+    `cwd` points `git` at the remote cache's working tree. The
+    remote endpoint always passes this (no REPO_PATH fallback in
+    this version of the service — the local-git UI was removed).
 
     `refs_prefix` is prepended to both `base` and `head` in the diff
-    command. The local-git path (REPO_PATH) passes `""` because the
-    working tree has actual local branches named `main` /
-    `feature/...`. The remote-git cache path passes `"origin/"`
-    because the cache only has remote-tracking refs under
+    command. The remote-git cache path passes `"origin/"` because
+    the cache only has remote-tracking refs under
     `refs/remotes/origin/*` — the UI's RefPicker sends short names
     like `main` (the part after `origin/`), and we have to re-prefix
     them so `git diff main...feature` resolves to
@@ -248,6 +152,9 @@ def diff_refs(base: str, head: str, path: str | None = None, cwd: Path | None = 
     else:
         path_v = None
 
+    if cwd is None:
+        raise GitError("diff_refs requires an explicit cwd (the remote cache path)")
+
     # Build the diff args. Three-dot or two-dot per `use_three_dot`.
     # -M and -C enable rename / copy detection so renamed files show
     # up as one file with a coherent diff.
@@ -262,10 +169,7 @@ def diff_refs(base: str, head: str, path: str | None = None, cwd: Path | None = 
     raw = _run_git(diff_args, cwd=cwd)
 
     # Quick stat block for the UI to show before the user clicks review.
-    # Same refs_prefix and separator as the main diff call above — the
-    # previous version had a duplicate stat block that forgot both,
-    # so the stat would fail with "Unknown ref" even when the main
-    # diff succeeded.
+    # Same refs_prefix and separator as the main diff call above.
     stat_args = ["diff", "--stat", f"{refs_prefix}{base_v}{sep}{refs_prefix}{head_v}"]
     if path_v:
         stat_args += ["--", path_v]

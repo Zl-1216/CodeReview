@@ -4,144 +4,12 @@
       <div>
         <h2 class="text-sm font-semibold text-gray-900 dark:text-gray-100">{{ t('input.title') }}</h2>
         <p class="text-xs text-gray-500 dark:text-gray-400">
-          <template v-if="!config?.git_enabled && !config?.remote_git_enabled">{{ t('input.hintBasic') }} {{ '' }}</template>
-          <template v-else-if="config?.remote_git_enabled">{{ t('input.hintRemote') }} {{ '' }}</template>
-          <template v-else>{{ t('input.hintGit') }} {{ '' }}</template>
+          {{ t('input.hintRemote') }}
         </p>
-      </div>
-      <div class="flex items-center gap-1 rounded-md bg-gray-100 dark:bg-gray-800 p-0.5 text-xs">
-        <button
-          v-for="m in availableModes"
-          :key="m.value"
-          type="button"
-          :class="[
-            'px-2.5 py-1 rounded transition',
-            mode === m.value
-              ? 'bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100 shadow-sm'
-              : 'text-gray-500 hover:text-gray-900 dark:hover:text-gray-100',
-          ]"
-          @click="mode = m.value"
-        >
-          {{ m.label }}
-        </button>
       </div>
     </header>
 
-    <div v-if="mode === 'snippet'" class="space-y-3">
-      <div class="grid sm:grid-cols-[1fr,1fr,auto] gap-2">
-        <input
-          v-model="snippetPath"
-          type="text"
-          :placeholder="t('input.pathPlaceholder')"
-          class="rounded-md border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-950 px-3 py-2 text-sm font-mono focus:border-indigo-500 focus:outline-none"
-        />
-        <select
-          v-model="snippetLanguage"
-          class="rounded-md border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-950 px-3 py-2 text-sm focus:border-indigo-500 focus:outline-none"
-        >
-          <option value="">{{ t('input.langAuto') }}</option>
-          <option v-for="l in languages" :key="l" :value="l">{{ l }}</option>
-        </select>
-        <label class="inline-flex items-center justify-center gap-1.5 rounded-md border border-dashed border-gray-300 dark:border-gray-700 px-3 py-2 text-xs text-gray-600 dark:text-gray-300 cursor-pointer hover:border-indigo-400">
-          <input type="file" class="hidden" @change="onFile" />
-          {{ t('input.upload') }}
-        </label>
-      </div>
-      <textarea
-        v-model="snippetContent"
-        rows="10"
-        :placeholder="t('input.codePlaceholder')"
-        class="w-full rounded-md border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-950 px-3 py-2 text-sm font-mono focus:border-indigo-500 focus:outline-none"
-      ></textarea>
-    </div>
-
-    <div v-else-if="mode === 'diff'" class="space-y-3">
-      <textarea
-        v-model="diffText"
-        rows="12"
-        :placeholder="t('input.diffPlaceholder')"
-        class="w-full rounded-md border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-950 px-3 py-2 text-sm font-mono focus:border-indigo-500 focus:outline-none"
-      ></textarea>
-      <div v-if="parsedFiles.length" class="text-xs text-gray-500 dark:text-gray-400">
-        {{ t('input.detected', { n: parsedFiles.length }) }}
-        <span class="font-mono">{{ parsedFileList }}</span>
-      </div>
-    </div>
-
-    <div v-else-if="mode === 'git'" class="space-y-3">
-      <div v-if="gitStatus" class="rounded-md border border-gray-200 dark:border-gray-800 bg-gray-50/50 dark:bg-gray-950/50 px-3 py-2 text-xs text-gray-600 dark:text-gray-300 flex items-center justify-between gap-2 flex-wrap">
-        <div>
-          <span class="text-gray-500">{{ t('input.repo') }}</span>
-          <span class="font-mono ml-1">{{ gitStatus.path }}</span>
-        </div>
-        <div class="flex items-center gap-2">
-          <span class="inline-flex items-center gap-1">
-            <span class="text-gray-500">{{ t('input.head') }}</span>
-            <span class="font-mono">{{ gitStatus.head }}</span>
-            <span v-if="gitStatus.head_sha" class="text-gray-400">({{ gitStatus.head_sha }})</span>
-          </span>
-          <span v-if="gitStatus.dirty" class="inline-flex items-center gap-1 text-amber-600 dark:text-amber-400">
-            <span class="w-1.5 h-1.5 rounded-full bg-amber-500"></span>
-            {{ t('input.dirty') }}
-          </span>
-        </div>
-      </div>
-
-      <div class="grid sm:grid-cols-2 gap-2">
-        <RefPicker
-          v-model="gitBase"
-          :label="t('input.baseRef')"
-          :placeholder="t('input.baseRefPlaceholder')"
-          :branches="branches"
-          :tags="tags"
-          :loading="loadingRefs"
-          @refresh="loadRefs"
-        />
-        <RefPicker
-          v-model="gitHead"
-          :label="t('input.headRef')"
-          :placeholder="t('input.headRefPlaceholder')"
-          :branches="branches"
-          :tags="tags"
-          :loading="loadingRefs"
-          @refresh="loadRefs"
-        />
-      </div>
-
-      <div>
-        <input
-          v-model="gitPath"
-          type="text"
-          :placeholder="t('input.pathFilterPlaceholder')"
-          class="w-full rounded-md border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-950 px-3 py-2 text-sm font-mono focus:border-indigo-500 focus:outline-none"
-        />
-      </div>
-
-      <div class="flex items-center justify-between gap-2">
-        <button
-          type="button"
-          :disabled="!canPreview || previewing"
-          class="rounded-md border border-gray-300 dark:border-gray-700 px-3 py-1.5 text-xs hover:border-indigo-400 disabled:opacity-50"
-          @click="previewDiff"
-        >
-          <span v-if="previewing">{{ t('common.loading') }}</span>
-          <span v-else>{{ t('input.previewDiff') }}</span>
-        </button>
-        <div v-if="previewSummary" class="text-xs text-gray-500 dark:text-gray-400 text-right">
-          {{ t('input.previewSummary', { n: previewSummary.file_count, bin: previewSummary.binary }) }}
-          <details v-if="previewSummary.stat" class="mt-1">
-            <summary class="cursor-pointer text-gray-400 hover:text-gray-600">{{ t('input.showStat') }}</summary>
-            <pre class="mt-1 text-[10px] font-mono text-gray-500 whitespace-pre">{{ previewSummary.stat }}</pre>
-          </details>
-        </div>
-      </div>
-
-      <div v-if="previewError" class="rounded-md border border-red-200 dark:border-red-800/50 bg-red-50 dark:bg-red-900/20 p-2 text-xs text-red-700 dark:text-red-300">
-        {{ previewError }}
-      </div>
-    </div>
-
-    <div v-else-if="mode === 'remote'" class="space-y-3">
+    <div class="space-y-3">
       <div v-if="config?.requires_api_key && !hasApiKey" class="rounded-md border border-amber-200 dark:border-amber-800/50 bg-amber-50 dark:bg-amber-900/20 p-2 text-xs text-amber-700 dark:text-amber-300 space-y-1.5">
         <div>{{ t('input.apiKeyRequired') }}</div>
         <details class="text-amber-700/80 dark:text-amber-300/80">
@@ -313,13 +181,6 @@
     </div>
 
     <div class="flex items-center justify-end gap-2 pt-2 border-t border-gray-100 dark:border-gray-800">
-      <button
-        type="button"
-        class="text-xs text-gray-500 hover:text-indigo-600 dark:hover:text-indigo-300 px-2 py-1"
-        @click="loadSample"
-      >
-        {{ t('input.loadSample') }}
-      </button>
       <span v-if="error" class="text-xs text-red-500">{{ error }}</span>
       <button
         type="button"
@@ -340,10 +201,9 @@ import { api, getApiKey, setApiKey, clearApiKey } from '../utils/api.js'
 import { useConfig } from '../composables/useConfig.js'
 import { useI18n } from '../i18n/messages.js'
 import { categoryLabel } from '../utils/format.js'
-// Lazy-load the ref picker — it's only used in git mode, and only when
-// the backend has REPO_PATH configured. Pulling it in via
-// defineAsyncComponent keeps it (and its dropdown keyboard handling)
-// out of the initial bundle for the common snippet/diff paths.
+// Lazy-load the ref picker — it's only needed once a remote is
+// connected, so the dropdown's keyboard handling and click-outside
+// logic stay out of the initial bundle.
 const RefPicker = defineAsyncComponent(() => import('./RefPicker.vue'))
 
 const props = defineProps({
@@ -354,53 +214,11 @@ const emit = defineEmits(['submit'])
 const { config } = useConfig()
 const { t, locale } = useI18n()
 
-const availableModes = computed(() => [
-  { value: 'snippet', label: t('input.modeSnippet') },
-  { value: 'diff', label: t('input.modeDiff') },
-  ...(config.value?.git_enabled ? [{ value: 'git', label: t('input.modeGit') }] : []),
-  ...(config.value?.remote_git_enabled ? [{ value: 'remote', label: t('input.modeRemote') }] : []),
-])
-const mode = ref(
-  config.value?.remote_git_enabled
-    ? 'remote'
-    : config.value?.git_enabled
-    ? 'git'
-    : 'snippet'
-)
-
-watch(() => config.value?.git_enabled, (v) => {
-  if (v && mode.value !== 'git') mode.value = 'git'
-})
-
-const languages = ['python', 'javascript', 'typescript', 'tsx', 'jsx', 'go', 'rust', 'java', 'kotlin', 'ruby', 'php', 'csharp', 'cpp', 'c', 'swift', 'bash', 'sql', 'html', 'css', 'yaml', 'json']
-const snippetPath = ref('snippet.py')
-const snippetLanguage = ref('python')
-const snippetContent = ref('')
-const diffText = ref('')
-const focuses = ref([...props.defaultFocuses])
-const focusOptions = ['bug', 'security', 'performance', 'style', 'best_practice', 'documentation']
-const busy = ref(false)
-const error = ref(null)
-const parsedFiles = ref([])
-
-// --- Git mode state ------------------------------------------------------
-const gitBase = ref('main')
-const gitHead = ref('')
-const gitPath = ref('')
-const gitStatus = ref(null)
-const branches = ref([])
-const tags = ref([])
-const loadingRefs = ref(false)
-const previewing = ref(false)
-const previewSummary = ref(null)
-const previewFiles = ref([])
-const previewError = ref(null)
-
 // --- Remote mode state ---------------------------------------------------
-// The user pastes a URL (+ optional token), we hit the new
-// /api/git/remote/* endpoints, and reuse the same RefPicker + diff
-// pipeline as the local-git mode. `remoteStatus` is null until the user
-// successfully connects; on disconnect we drop it and clear the refs.
+// The user pastes a URL (+ optional token), we hit the
+// /api/git/remote/* endpoints, and reuse the RefPicker + diff
+// pipeline. `remoteStatus` is null until the user successfully
+// connects; on disconnect we drop it and clear the refs.
 const remoteUrl = ref('')
 const remoteToken = ref('')
 const remoteId = ref(null)
@@ -417,6 +235,20 @@ const remoteError = ref(null)
 // marker when a subprocess timeout reclassified a network failure,
 // which would otherwise fall into both buckets.
 const remoteErrorStatus = ref(null)
+
+const gitBase = ref('')
+const gitHead = ref('')
+const gitPath = ref('')
+const loadingRefs = ref(false)
+const previewing = ref(false)
+const previewSummary = ref(null)
+const previewFiles = ref([])
+const previewError = ref(null)
+
+const focuses = ref([...props.defaultFocuses])
+const focusOptions = ['bug', 'security', 'performance', 'style', 'best_practice', 'documentation']
+const busy = ref(false)
+const error = ref(null)
 
 // --- API key (Review/Upload/Remote writes) ------------------------------
 // When the server is configured with REVIEW_API_KEY, every write needs
@@ -474,62 +306,17 @@ onUnmounted(() => window.removeEventListener('codereview:apikey-changed', onApiK
 // was already set by a sibling).
 watch(() => config.value, refreshHasApiKey)
 
-async function loadGitStatus() {
-  if (!config.value?.git_enabled) return
-  try {
-    gitStatus.value = await api.gitStatus()
-    // Default the base to the repo's default branch (main / master / etc).
-    // Only overwrite if the user hasn't manually edited gitBase.
-    if (gitStatus.value?.default_branch && gitBase.value === 'main' && !gitBaseTouched.value) {
-      gitBase.value = gitStatus.value.default_branch
-    }
-    if (!gitHead.value && gitStatus.value?.head) {
-      gitHead.value = gitStatus.value.head
-    }
-  } catch {
-    gitStatus.value = null
-  }
-}
-
-const gitBaseTouched = ref(false)
-watch(gitBase, () => { gitBaseTouched.value = true })
-
-async function loadRefs() {
-  if (!config.value?.git_enabled) return
-  loadingRefs.value = true
-  try {
-    const [b, t] = await Promise.all([api.gitBranches(), api.gitTags().catch(() => ({ tags: [] }))])
-    branches.value = b.branches || []
-    tags.value = t.tags || []
-  } catch {
-    // ignore — branches list is a nice-to-have
-  } finally {
-    loadingRefs.value = false
-  }
-}
-
-onMounted(() => {
-  if (config.value?.git_enabled) {
-    loadGitStatus()
-    loadRefs()
-  }
-})
-
-watch(() => config.value?.git_enabled, (v) => {
-  if (v) {
-    loadGitStatus()
-    loadRefs()
-  }
-})
-
 async function previewDiff() {
+  if (!remoteId.value) return
   previewing.value = true
   previewError.value = null
   previewSummary.value = null
   try {
-    const r = mode.value === 'remote' && remoteId.value
-      ? await api.gitRemoteDiff(remoteId.value, { base: gitBase.value, head: gitHead.value, path: gitPath.value })
-      : await api.gitDiff({ base: gitBase.value, head: gitHead.value, path: gitPath.value })
+    const r = await api.gitRemoteDiff(remoteId.value, {
+      base: gitBase.value,
+      head: gitHead.value,
+      path: gitPath.value,
+    })
     previewFiles.value = r.files
     previewSummary.value = {
       file_count: r.files.length,
@@ -574,129 +361,28 @@ const isNetworkError = computed(() => {
   )
 })
 const canSubmit = computed(() => {
-  if (mode.value === 'snippet') return snippetContent.value.trim().length > 0
-  if (mode.value === 'diff') return diffText.value.trim().length > 0 && parsedFiles.value.length > 0
-  if (mode.value === 'git') {
-    if (previewFiles.value.length > 0) return true
-    return canPreview.value  // allow submit without preview
-  }
-  if (mode.value === 'remote') {
-    if (!remoteId.value) return false
-    if (previewFiles.value.length > 0) return true
-    return canPreview.value
-  }
-  return false
+  if (!remoteId.value) return false
+  if (previewFiles.value.length > 0) return true
+  return canPreview.value
 })
-
-const parsedFileList = computed(() => parsedFiles.value.map((f) => f.path).join(', '))
-
-let parseSeq = 0
-async function parseDiff() {
-  if (mode.value !== 'diff' || !diffText.value.trim()) {
-    parsedFiles.value = []
-    return
-  }
-  // Sequence number guards against a slow earlier response overwriting
-  // a fresher one. Cheaper than AbortController and works the same way
-  // for a non-cancellable POST.
-  const seq = ++parseSeq
-  try {
-    const resp = await api.parseDiff(diffText.value)
-    if (seq !== parseSeq) return  // a newer call has superseded us
-    parsedFiles.value = resp.files || []
-    error.value = null
-  } catch (e) {
-    if (seq !== parseSeq) return
-    error.value = e.message
-    parsedFiles.value = []
-  }
-}
-
-// Debounce typing → backend. A 50 KB diff sent to the parser on every
-// keystroke would tie up the request slot and the UI feedback loop
-// would lag visibly. 250 ms is short enough to feel instant.
-let debounceTimer = null
-function scheduleParse() {
-  if (debounceTimer) clearTimeout(debounceTimer)
-  debounceTimer = setTimeout(parseDiff, 250)
-}
-
-watch([mode, diffText], () => {
-  scheduleParse()
-}, { immediate: false })
-
-watch(mode, (m) => {
-  if (m === 'git' || m === 'remote') {
-    previewFiles.value = []
-    previewSummary.value = null
-    previewError.value = null
-  }
-})
-
-async function onFile(ev) {
-  const file = ev.target.files?.[0]
-  if (!file) return
-  try {
-    busy.value = true
-    const resp = await api.uploadFile(file)
-    snippetPath.value = resp.file.path
-    snippetLanguage.value = resp.file.language || ''
-    snippetContent.value = resp.file.content
-    error.value = null
-  } catch (e) {
-    error.value = e.message
-  } finally {
-    busy.value = false
-    ev.target.value = ''
-  }
-}
 
 async function onSubmit() {
   busy.value = true
   error.value = null
   try {
-    let files
-    let title
-    let source = null
-    if (mode.value === 'snippet') {
-      files = [{
-        path: snippetPath.value || 'snippet.txt',
-        content: snippetContent.value,
-        language: snippetLanguage.value || null,
-      }]
-      title = snippetPath.value
-    } else if (mode.value === 'diff') {
-      // Cancel any pending debounced parse — we're submitting now, so
-      // fire immediately and wait for it.
-      if (debounceTimer) {
-        clearTimeout(debounceTimer)
-        debounceTimer = null
-      }
-      if (!parsedFiles.value.length) await parseDiff()
-      files = parsedFiles.value
-      title = `diff: ${files[0]?.path || 'untitled'}`
-    } else if (mode.value === 'git') {
-      // git mode — if no preview yet, run preview first
-      if (previewFiles.value.length === 0) await previewDiff()
-      files = previewFiles.value
-      title = `${gitBase.value}..${gitHead.value}`
-      source = 'local'
-    } else {
-      // remote mode — same as git, but with a remote:<name> source tag
-      if (!remoteId.value) {
-        error.value = 'Connect to a remote repo first'
-        return
-      }
-      if (previewFiles.value.length === 0) await previewDiff()
-      files = previewFiles.value
-      const name = remoteStatus.value?.name || remoteUrl.value
-      title = `${name}@${gitBase.value}..${gitHead.value}`
-      source = `remote:${name}`
+    if (!remoteId.value) {
+      error.value = 'Connect to a remote repo first'
+      return
     }
+    if (previewFiles.value.length === 0) await previewDiff()
+    const files = previewFiles.value
     if (!files.length) {
       error.value = 'No files to review'
       return
     }
+    const name = remoteStatus.value?.name || remoteUrl.value
+    const title = `${name}@${gitBase.value}..${gitHead.value}`
+    const source = `remote:${name}`
     emit('submit', { files, focuses: focuses.value, title, source })
   } catch (e) {
     error.value = e.message
@@ -710,10 +396,10 @@ function _setRemoteFromStatus(s) {
   remoteStatus.value = s
   remoteBranches.value = s.branches || []
   remoteTags.value = s.tags || []
-  // Pick sensible defaults: base = default_branch, head = HEAD or first
-  // available branch. Only overwrite if the user hasn't already typed
-  // something into the picker.
-  if (s.default_branch && (!gitBase.value || gitBase.value === 'main')) {
+  // Pick sensible defaults: base = default_branch, head = HEAD or
+  // first available branch. Only overwrite if the user hasn't
+  // already typed something into the picker.
+  if (s.default_branch && !gitBase.value) {
     gitBase.value = s.default_branch
   }
   if (s.head && !gitHead.value) {
@@ -781,33 +467,5 @@ async function disconnectRemote() {
   previewFiles.value = []
   previewSummary.value = null
   previewError.value = null
-}
-
-function loadSample() {
-  mode.value = 'snippet'
-  snippetPath.value = 'auth.py'
-  snippetLanguage.value = 'python'
-  snippetContent.value = `import pickle, subprocess, os
-
-def load_user_blob(blob):
-    # Pickle is convenient, but it executes arbitrary code
-    return pickle.loads(blob)
-
-def list_user_files(directory):
-    # Building shell commands from variables is risky
-    return subprocess.call("ls " + directory, shell=True)
-
-def get_password():
-    # Hardcoded secret — should come from env or a secret store
-    return "hunter2"
-
-def with_default(items=[]):
-    # Mutable default — shared across calls
-    items.append(1)
-    return items
-
-# TODO: refactor to use a real logger
-print("loaded module")
-`
 }
 </script>

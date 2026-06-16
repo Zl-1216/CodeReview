@@ -6,10 +6,9 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project: CodeReview
 
-A self-hosted, AI-powered code review tool. Paste a snippet, drop a file, paste
-`git diff` output, or compare two git refs; the service streams structured
-findings back to the UI in real time. Two review engines share the same finding
-schema:
+A self-hosted, AI-powered code review tool. Paste a remote Git URL, pick two
+refs, and the service streams structured findings back to the UI in real time.
+Two review engines share the same finding schema:
 
 * **Anthropic Claude** — used when `ANTHROPIC_API_KEY` is set.
 * **Mock rule engine** — a deterministic, language-aware regex set in
@@ -40,18 +39,17 @@ VITE_API_TARGET=http://localhost:8765 npm run dev
 
 Tests:
 ```bash
-# Backend (pytest, currently 130 tests)
+# Backend (pytest, currently 160 tests)
 cd backend
 python3 -m pytest -q                          # everything
 python3 -m pytest tests/test_api.py -q         # one file
 python3 -m pytest -k "cancel" -q               # by name pattern
-python3 -m ruff check .                       # lint
+ruff check .                                  # lint (installed via pip)
 
-# Frontend (vitest, currently 75 tests; ESLint)
+# Frontend (vitest, currently 121 tests; ESLint)
 cd ../frontend
 npm test                                      # all (vitest run)
 npm test -- -t "useReview"                    # by name
-npm run lint
 npm run build                                 # also validates async code-splitting
 ```
 
@@ -121,17 +119,23 @@ it doesn't know about them.
 - **`utils/api.js:request` always combines `AbortSignal.timeout(30_000)` with
   any caller signal.** No caller has to remember to add the timeout.
 - **`RefPicker` is `defineAsyncComponent` lazy-loaded** in `InputPanel.vue`
-  because it's only used in git mode, which itself only renders when
-  `REPO_PATH` is set on the backend.
-- **Remote Git cache (`backend/git_remote.py`).** A second, independent
-  Git workflow that lets the user paste any `https://…` / `git@host:…`
+  because it's only used after the user connects a remote (so the
+  dropdown keyboard handling and click-outside logic stay out of the
+  initial bundle).
+- **Remote Git cache (`backend/git_remote.py`).** The only input mode
+  the UI supports: the user pastes any `https://…` / `git@host:…`
   URL. Clones are cached at `REMOTE_GIT_CACHE_DIR/{sha1(url)[:12]}/`
   with `--depth 1 --filter=blob:none --no-tags --no-single-branch` for
   speed. `--no-single-branch` is explicit: the default for
   `git clone --depth 1` is to fetch only the source's HEAD branch,
   which would leave the UI's branch picker with just the default
   branch even when the repo has dozens. Refresh fetches all heads via
-  the refspec `+refs/heads/*:refs/remotes/origin/*`. All four `/api/git/remote/*` endpoints sit behind
+  the refspec `+refs/heads/*:refs/remotes/origin/*`. **Cache hit also
+  runs a cheap refs-only fetch** (best-effort, see
+  `RemoteCache.get_or_create`) so a branch pushed after the initial
+  clone shows up on the very next status call — without that, the
+  branch picker would only refresh on TTL expiry or an explicit
+  "Refresh" click. All `/api/git/remote/*` endpoints sit behind
   `auth.require_api_key`; the URL is validated against a host
   allowlist (default: GitHub / GitLab / Bitbucket / Gitea / Gitee /
   Codeberg / SourceHut) with a post-resolution private-IP check as
@@ -141,7 +145,7 @@ it doesn't know about them.
   background `_remote_sweep_loop` runs every 5 min from the FastAPI
   lifespan to drop stale entries and shrink the on-disk cache. The
   `Review.source` column (added via `ALTER TABLE` migration in
-  `init_schema()`) tags each review as `local`, `remote:<name>`, or
+  `init_schema()`) tags each review as `remote:<name>`, or
   `null` (legacy rows); the frontend `HistoryList` renders a small
   badge per source.
 

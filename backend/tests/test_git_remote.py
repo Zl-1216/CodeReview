@@ -313,10 +313,68 @@ def test_get_or_create_clones_then_caches(cache_dir, tmp_path):
     entry, was_cached = cache.get_or_create(url)
     assert was_cached is False
     assert (entry.path / ".git").exists()
-    # Second call within TTL should be a cache hit.
+    # Second call within TTL is a cache hit (we still refresh refs on
+    # the hit — see test_cache_hit_refreshes_new_branches — but the
+    # entry identity is preserved).
     entry2, was_cached2 = cache.get_or_create(url)
     assert was_cached2 is True
     assert entry2.id == entry.id
+
+
+def test_cache_hit_refreshes_new_branches(cache_dir, tmp_path):
+    """Regression: a branch pushed after the initial clone was
+    invisible in the picker until TTL expired — the cache hit path
+    returned the stale entry without running a `git fetch`. Fix: a
+    cache hit now does a cheap refs-only fetch, so a freshly pushed
+    branch is visible on the very next status call (no manual
+    Refresh click required)."""
+    bare = _make_bare_remote(tmp_path)
+    url = f"file://{bare}"
+    cache = git_remote.RemoteCache()
+
+    # First call: initial clone, both `main` and `feature` are picked
+    # up by `--no-single-branch`.
+    entry, _ = cache.get_or_create(url)
+    names = {b["name"] for b in cache.list_branches(entry)}
+    assert "main" in names
+    assert "feature" in names
+
+    # Push a new branch to the source (we can't add a branch to a bare
+    # repo directly, so we go through a non-bare working copy).
+    work = tmp_path / "work"
+    subprocess.run(
+        ["git", "clone", "-q", str(bare), str(work)],
+        check=True, capture_output=True, text=True,
+    )
+    subprocess.run(
+        ["git", "-c", "user.name=T", "-c", "user.email=t@e.com",
+         "checkout", "-q", "-b", "hotfix"],
+        cwd=str(work), check=True, capture_output=True, text=True,
+    )
+    (work / "hot.py").write_text("h=1\n")
+    subprocess.run(
+        ["git", "add", "."], cwd=str(work), check=True, capture_output=True, text=True,
+    )
+    subprocess.run(
+        ["git", "-c", "user.name=T", "-c", "user.email=t@e.com",
+         "commit", "-q", "-m", "hotfix"],
+        cwd=str(work), check=True, capture_output=True, text=True,
+    )
+    subprocess.run(
+        ["git", "push", "-q", "origin", "hotfix"],
+        cwd=str(work), check=True, capture_output=True, text=True,
+    )
+
+    # Second call within TTL — without the fix this would still return
+    # the stale {main, feature} set. With the fix the cheap refs-only
+    # fetch picks up `hotfix` immediately.
+    entry2, was_cached = cache.get_or_create(url)
+    assert was_cached is True
+    names2 = {b["name"] for b in cache.list_branches(entry2)}
+    assert "hotfix" in names2, (
+        f"expected 'hotfix' in branch list after cache-hit refresh; "
+        f"got {sorted(names2)}"
+    )
 
 
 def test_get_or_create_force_refresh_runs_git(cache_dir, tmp_path):

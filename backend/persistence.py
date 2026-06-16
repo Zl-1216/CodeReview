@@ -211,8 +211,9 @@ def _row_to_review(row: sqlite3.Row) -> Review:
     focuses = json.loads(row["focuses"] or "[]")
     files_raw = json.loads(row["files"] or "[]")
     files = [CodeFile(**f) for f in files_raw]
-    # `source` is nullable: legacy rows have it as None, REPO_PATH-backed
-    # reviews set it to "local", remote ones to "remote:<name>".
+    # `source` is nullable: legacy rows (and any pre-remote-mode rows)
+    # have it as None. The remote URL flow always sets it to
+    # "remote:<name>" so the history list can show a per-source badge.
     try:
         source = row["source"]
     except (IndexError, KeyError):

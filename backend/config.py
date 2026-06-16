@@ -32,26 +32,20 @@ MAX_DIFF_LINES = 4000  # truncated sentinels in the prompt
 MAX_GIT_DIFF_BYTES = 5 * 1024 * 1024  # 5 MB cap on a `git diff` payload
 
 # --- Auth & rate limit ------------------------------------------------------
-# When REVIEW_API_KEY is set, write endpoints (/api/review, /api/upload,
-# /cancel, /rerun) require a matching `Authorization: Bearer <key>` header.
-# Reads are public. Leave empty to disable auth entirely.
+# When REVIEW_API_KEY is set, write endpoints (/api/review, /cancel,
+# /rerun, /api/git/remote/*) require a matching `Authorization: Bearer <key>`
+# header. Reads are public. Leave empty to disable auth entirely.
 REVIEW_API_KEY = os.environ.get("REVIEW_API_KEY", "").strip()
 # Per-key (or per-IP when no key) cap on review submissions per minute.
 # Set to 0 to disable rate limiting.
 REVIEW_RATE_LIMIT_PER_MIN = int(os.environ.get("REVIEW_RATE_LIMIT_PER_MIN", "20"))
 REVIEW_ID_LENGTH = int(os.environ.get("REVIEW_ID_LENGTH", "16"))
 
-# --- Git integration -------------------------------------------------------
-# When `REPO_PATH` is set the backend exposes /api/git/* endpoints that let
-# the user compare branches/tags/commits. The path must point to a working
-# git working tree. Leave empty to disable the feature entirely.
-REPO_PATH = os.environ.get("REPO_PATH", "").strip()
-GIT_TIMEOUT = float(os.environ.get("GIT_TIMEOUT", "30"))
-
 # --- Remote git integration -----------------------------------------------
 # Lets users paste any https://... (or git@host:owner/repo.git) URL, clone it
-# server-side into a managed cache, and pick branches to review. Independent
-# of REPO_PATH — the two features can be enabled or disabled separately.
+# server-side into a managed cache, and pick branches to review. This is the
+# only git workflow the UI exposes — the previous REPO_PATH-backed local
+# mode was removed, leaving just the remote URL flow.
 REVIEW_GIT_REMOTE_ENABLED = os.environ.get("REVIEW_GIT_REMOTE_ENABLED", "true").strip().lower() not in ("0", "false", "no", "off")
 # Comma-separated host allowlist. git@ SSH URLs are mapped to their host
 # (everything between `git@` and the first `:`); only listed hosts are

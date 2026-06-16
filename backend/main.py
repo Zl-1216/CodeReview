@@ -6,9 +6,13 @@ Routes:
   GET    /api/reviews/{id}       Fetch a single review with findings
   DELETE /api/reviews/{id}       Delete a review
   GET    /api/reviews/{id}/events  SSE stream of review progress
-  POST   /api/diff/parse         Parse a unified diff into per-file entries
   GET    /api/health             Liveness probe
   GET    /api/config             Public config (AI enabled, default model, etc.)
+  POST   /api/git/remote/clone   Clone / fetch a user-supplied remote repo
+  GET    /api/git/remote         List cached remote repos
+  GET    /api/git/remote/{id}    Query a cached remote's head / branches / tags
+  POST   /api/git/remote/{id}/diff  Compute a diff for two refs on a remote
+  DELETE /api/git/remote/{id}    Drop a cached remote from disk
 """
 from __future__ import annotations
 
@@ -25,14 +29,12 @@ import auth
 import config
 import git_diff
 import persistence
-from diff_parser import _infer_language, parse_unified_diff
-from fastapi import BackgroundTasks, Depends, FastAPI, File, HTTPException, UploadFile
+from diff_parser import _infer_language
+from fastapi import BackgroundTasks, Depends, FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from models import (
     CodeFile,
     Review,
-    ReviewDiffRequest,
-    ReviewDiffResponse,
     ReviewListResponse,
     ReviewRequest,
 )
@@ -145,8 +147,6 @@ async def public_config():
         "focuses": config.REVIEW_FOCUSES,
         "max_files": config.MAX_FILES_PER_REVIEW,
         "max_file_bytes": config.MAX_FILE_BYTES,
-        "git_enabled": bool(config.REPO_PATH),
-        "git_repo_path": config.REPO_PATH or None,
         "remote_git_enabled": bool(config.REVIEW_GIT_REMOTE_ENABLED),
         # True iff the server is configured with REVIEW_API_KEY. When
         # true, every write endpoint (review, upload, cancel, rerun,
@@ -155,78 +155,6 @@ async def public_config():
         # persists it in localStorage.
         "requires_api_key": bool(config.REVIEW_API_KEY),
     }
-
-
-# --- Diff parsing ----------------------------------------------------------
-
-@app.post("/api/diff/parse", response_model=ReviewDiffResponse)
-async def diff_parse(req: ReviewDiffRequest):
-    files = parse_unified_diff(req.diff)
-    return ReviewDiffResponse(files=files)
-
-
-# --- Git integration -------------------------------------------------------
-# The endpoints below are disabled when REPO_PATH is not set. They let the
-# user compare two refs (branch / tag / commit) on a configured local repo
-# and feed the resulting diff into the review pipeline.
-
-class GitDiffRequest(BaseModel):
-    base: str
-    head: str
-    path: str | None = None
-
-
-class GitDiffResponse(BaseModel):
-    base: str
-    head: str
-    path: str | None = None
-    stat: str
-    files: list[CodeFile]
-    raw: str
-    binary_skipped: int = 0
-    truncated: bool = False
-
-
-@app.get("/api/git/status")
-async def git_status():
-    """Return metadata about the configured repo. Returns 404 when disabled."""
-    if not config.REPO_PATH:
-        raise HTTPException(status_code=404, detail="Git integration is disabled (REPO_PATH not set)")
-    try:
-        return git_diff.get_repo_info()
-    except git_diff.GitError as e:
-        raise HTTPException(status_code=400, detail=str(e)) from e
-
-
-@app.get("/api/git/branches")
-async def git_branches():
-    if not config.REPO_PATH:
-        raise HTTPException(status_code=404, detail="Git integration is disabled (REPO_PATH not set)")
-    try:
-        return {"branches": git_diff.list_branches()}
-    except git_diff.GitError as e:
-        raise HTTPException(status_code=400, detail=str(e)) from e
-
-
-@app.get("/api/git/tags")
-async def git_tags():
-    if not config.REPO_PATH:
-        raise HTTPException(status_code=404, detail="Git integration is disabled (REPO_PATH not set)")
-    try:
-        return {"tags": git_diff.list_tags()}
-    except git_diff.GitError as e:
-        raise HTTPException(status_code=400, detail=str(e)) from e
-
-
-@app.post("/api/git/diff", response_model=GitDiffResponse)
-async def git_diff_endpoint(req: GitDiffRequest):
-    if not config.REPO_PATH:
-        raise HTTPException(status_code=404, detail="Git integration is disabled (REPO_PATH not set)")
-    try:
-        result = git_diff.diff_refs(req.base, req.head, req.path)
-    except git_diff.GitError as e:
-        raise HTTPException(status_code=400, detail=str(e)) from e
-    return GitDiffResponse(**result)
 
 
 # --- Remote git integration -----------------------------------------------
@@ -374,9 +302,20 @@ async def git_remote_status(remote_id: str):
     return _remote_to_response(entry, status)
 
 
+class _RemoteDiffResponse(BaseModel):
+    base: str
+    head: str
+    path: str | None = None
+    stat: str
+    files: list[CodeFile]
+    raw: str
+    binary_skipped: int = 0
+    truncated: bool = False
+
+
 @app.post(
     "/api/git/remote/{remote_id}/diff",
-    response_model=GitDiffResponse,
+    response_model=_RemoteDiffResponse,
     dependencies=[Depends(auth.require_api_key), Depends(auth.enforce_rate_limit)],
 )
 async def git_remote_diff(remote_id: str, req: _RemoteRemoteDiffRequest):
@@ -406,7 +345,7 @@ async def git_remote_diff(remote_id: str, req: _RemoteRemoteDiffRequest):
         )
     except git_diff.GitError as e:
         raise HTTPException(status_code=400, detail=str(e)) from e
-    return GitDiffResponse(**result)
+    return _RemoteDiffResponse(**result)
 
 
 @app.delete(
@@ -769,33 +708,6 @@ async def rerun_review(review_id: str, background: BackgroundTasks):
     _event_queues[new_review.id] = queue
     background.add_task(_run_review, new_review, review.files, queue)
     return {"id": new_review.id, "status": new_review.status}
-
-
-# --- File upload -----------------------------------------------------------
-# Accept a single uploaded file and turn it into a one-file review request.
-# The frontend uses this for the "upload file" path.
-
-@app.post("/api/upload", dependencies=[Depends(auth.require_api_key)])
-async def upload_file(file: UploadFile = File(...)):
-    if not file.filename:
-        raise HTTPException(status_code=400, detail="No filename supplied")
-    raw = await file.read()
-    if len(raw) > config.MAX_FILE_BYTES:
-        raise HTTPException(
-            status_code=400,
-            detail=f"File exceeds {config.MAX_FILE_BYTES} bytes",
-        )
-    try:
-        content = raw.decode("utf-8")
-    except UnicodeDecodeError as e:
-        raise HTTPException(status_code=400, detail="File is not valid UTF-8") from e
-    return {
-        "file": {
-            "path": file.filename,
-            "content": content,
-            "language": _infer_language(file.filename),
-        }
-    }
 
 
 # --- Entrypoint ------------------------------------------------------------

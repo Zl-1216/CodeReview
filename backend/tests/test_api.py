@@ -22,18 +22,10 @@ def test_config(client):
     # feature is enabled, so the frontend can hide the Remote tab.
     assert "remote_git_enabled" in body
     assert body["remote_git_enabled"] is True
-
-
-def test_diff_parse(client):
-    r = client.post(
-        "/api/diff/parse",
-        json={"diff": "diff --git a/x.py b/x.py\n--- a/x.py\n+++ b/x.py\n@@ -1 +1 @@\n-a\n+b\n"},
-    )
-    assert r.status_code == 200
-    body = r.json()
-    assert len(body["files"]) == 1
-    assert body["files"][0]["path"] == "x.py"
-    assert body["files"][0]["content"] == "b"
+    # The local-git (`REPO_PATH`) and snippet/diff modes were removed —
+    # `git_enabled` / `git_repo_path` should no longer be exposed.
+    assert "git_enabled" not in body
+    assert "git_repo_path" not in body
 
 
 def test_review_round_trip(client, wait_for_completion):
@@ -91,27 +83,6 @@ def test_delete_review(client):
     assert r.status_code == 200
     r = client.get(f"/api/reviews/{rid}")
     assert r.status_code == 404
-
-
-def test_upload_file(client):
-    r = client.post(
-        "/api/upload",
-        files={"file": ("hello.py", b"print('hi')\n", "text/x-python")},
-    )
-    assert r.status_code == 200
-    body = r.json()
-    assert body["file"]["path"] == "hello.py"
-    assert "print" in body["file"]["content"]
-
-
-def test_upload_file_rejects_non_utf8(client):
-    """Non-UTF-8 bytes should be a 400, not a 500."""
-    r = client.post(
-        "/api/upload",
-        files={"file": ("bad.py", b"\xff\xfe\x00\x01", "text/x-python")},
-    )
-    assert r.status_code == 400
-    assert "utf-8" in r.json()["detail"].lower() or "utf8" in r.json()["detail"].lower()
 
 
 def test_review_too_many_files(client):
@@ -342,107 +313,6 @@ def test_rerun_review(client, wait_for_completion):
 def test_rerun_unknown_review(client):
     r = client.post("/api/reviews/does-not-exist/rerun")
     assert r.status_code == 404
-
-
-# --- Git integration -----------------------------------------------------
-
-def test_git_status_disabled(client):
-    """Without REPO_PATH set the git endpoints return 404."""
-    r = client.get("/api/git/status")
-    assert r.status_code == 404
-    r = client.get("/api/git/branches")
-    assert r.status_code == 404
-    r = client.post("/api/git/diff", json={"base": "main", "head": "feature"})
-    assert r.status_code == 404
-
-
-def test_git_status_with_repo(client, tmp_path, monkeypatch):
-    import subprocess
-    repo = tmp_path / "r"
-    repo.mkdir()
-    subprocess.run(["git", "init", "-q"], cwd=str(repo), check=True, capture_output=True)
-    subprocess.run(
-        ["git", "-C", str(repo), "symbolic-ref", "HEAD", "refs/heads/main"],
-        check=True, capture_output=True,
-    )
-    (repo / "a.py").write_text("x")
-    subprocess.run(
-        ["git", "-c", "user.name=t", "-c", "user.email=t@t", "add", "."],
-        cwd=str(repo), check=True, capture_output=True,
-    )
-    subprocess.run(
-        ["git", "-c", "user.name=t", "-c", "user.email=t@t", "commit", "-q", "-m", "i"],
-        cwd=str(repo), check=True, capture_output=True,
-    )
-    monkeypatch.setattr(config, "REPO_PATH", str(repo))
-    r = client.get("/api/git/status")
-    assert r.status_code == 200
-    body = r.json()
-    assert body["configured"] is True
-    assert body["head"] == "main"
-
-
-def test_git_diff_to_review_round_trip(client, tmp_path, monkeypatch, wait_for_completion):
-    """End-to-end: diff two branches, submit the parsed files for review."""
-    import subprocess
-    repo = tmp_path / "r"
-    repo.mkdir()
-    subprocess.run(["git", "init", "-q"], cwd=str(repo), check=True, capture_output=True)
-    subprocess.run(
-        ["git", "-C", str(repo), "symbolic-ref", "HEAD", "refs/heads/main"],
-        check=True, capture_output=True,
-    )
-    (repo / "app.py").write_text("def f():\n    return 1\n")
-    subprocess.run(["git", "add", "."], cwd=str(repo), check=True, capture_output=True)
-    subprocess.run(
-        ["git", "-c", "user.name=t", "-c", "user.email=t@t", "commit", "-q", "-m", "i"],
-        cwd=str(repo), check=True, capture_output=True,
-    )
-    subprocess.run(["git", "checkout", "-q", "-b", "feature"], cwd=str(repo), check=True, capture_output=True)
-    (repo / "app.py").write_text("def f():\n    return 2\nimport os\n")
-    subprocess.run(["git", "add", "."], cwd=str(repo), check=True, capture_output=True)
-    subprocess.run(
-        ["git", "-c", "user.name=t", "-c", "user.email=t@t", "commit", "-q", "-m", "f"],
-        cwd=str(repo), check=True, capture_output=True,
-    )
-    monkeypatch.setattr(config, "REPO_PATH", str(repo))
-
-    # Get the diff
-    r = client.post("/api/git/diff", json={"base": "main", "head": "feature"})
-    assert r.status_code == 200
-    diff = r.json()
-    assert {f["path"] for f in diff["files"]} == {"app.py"}
-
-    # Submit the parsed files for review
-    r = client.post(
-        "/api/review",
-        json={"files": diff["files"], "title": "diff: main..feature", "focuses": ["bug"]},
-    )
-    assert r.status_code == 200
-    rid = r.json()["id"]
-    body = wait_for_completion(rid)
-    assert body["status"] == "completed"
-
-
-def test_git_diff_unknown_ref(client, tmp_path, monkeypatch):
-    import subprocess
-    repo = tmp_path / "r"
-    repo.mkdir()
-    subprocess.run(["git", "init", "-q"], cwd=str(repo), check=True, capture_output=True)
-    subprocess.run(
-        ["git", "-C", str(repo), "symbolic-ref", "HEAD", "refs/heads/main"],
-        check=True, capture_output=True,
-    )
-    (repo / "a.py").write_text("x")
-    subprocess.run(["git", "add", "."], cwd=str(repo), check=True, capture_output=True)
-    subprocess.run(
-        ["git", "-c", "user.name=t", "-c", "user.email=t@t", "commit", "-q", "-m", "i"],
-        cwd=str(repo), check=True, capture_output=True,
-    )
-    monkeypatch.setattr(config, "REPO_PATH", str(repo))
-
-    r = client.post("/api/git/diff", json={"base": "main", "head": "no-such-thing"})
-    assert r.status_code == 400
 
 
 # --- Remote git integration ----------------------------------------------

@@ -532,9 +532,11 @@ class RemoteCache:
     ) -> tuple[_Entry, bool]:
         """Resolve `raw_url` to a clone on disk; clone or fetch as needed.
 
-        Returns (entry, was_cached). `was_cached` is True when no network
-        was used (existing entry within TTL), False when a clone / fetch
-        actually happened. Updates `last_used_at` regardless.
+        Returns (entry, was_cached). `was_cached` is True when an
+        existing entry was reused (the cache hit may still trigger a
+        cheap refs-only fetch so the branch list is fresh — see below),
+        False when a fresh clone / refresh actually happened. Updates
+        `last_used_at` regardless.
 
         Raises RemoteGitError subclasses; the caller maps them to HTTP.
         """
@@ -549,6 +551,31 @@ class RemoteCache:
             if existing is not None and not force_refresh:
                 age = now - existing.fetched_at
                 if age < config.REMOTE_GIT_CACHE_TTL:
+                    # Even on a cache hit, run a cheap refs-only fetch so
+                    # newly pushed branches appear in the picker right
+                    # away. Without this, a branch the user pushed after
+                    # the initial clone would be invisible until the TTL
+                    # expires — by which point they'd given up and
+                    # clicked Refresh, which did the same fetch anyway.
+                    # The fetch only updates refs (--filter=blob:none +
+                    # --depth 1), so it's typically a few hundred ms
+                    # even for repos with hundreds of branches.
+                    #
+                    # Best-effort: a network blip here keeps the stale
+                    # entry rather than failing the whole call, so a
+                    # temporarily-unreachable remote doesn't lock the
+                    # user out of branches they already saw before.
+                    try:
+                        self._clone_or_fetch(
+                            existing, parsed, token, is_initial=False
+                        )
+                    except RemoteGitError as e:
+                        logger.info(
+                            "Refs refresh on cache hit failed for %s; "
+                            "keeping stale entry: %s",
+                            existing.url, e,
+                        )
+                    self._refresh_metadata(existing)
                     existing.last_used_at = now
                     self._persist(existing)
                     return existing, True

@@ -1,8 +1,8 @@
 # CodeReview
 
-一个自托管的、AI 驱动的代码评审工具。可以粘贴代码片段、上传文件，
-或直接粘贴 `git diff` 的输出；服务会实时地将结构化的评审结果流式
-返回到前端界面。
+一个自托管的、AI 驱动的代码评审工具。粘贴一个 Git 仓库 URL，
+选择两个分支 / Tag 即可对其变更进行评审；服务会实时地将结构化的
+评审结果流式返回到前端界面。
 
 内置两套评审引擎：
 
@@ -108,8 +108,6 @@ VITE_API_BASE=https://reviews.example.com/api npm run build
 | `ANTHROPIC_BASE_URL`     | `https://api.anthropic.com`       | 代理 / 区域端点覆盖                        |
 | `REVIEW_AI_TIMEOUT`      | `45`                              | AI 调用超时时间（秒）                       |
 | `CORS_ALLOW_ORIGINS`     | `http://localhost:5273,http://127.0.0.1:5273` | 逗号分隔的允许来源      |
-| `REPO_PATH`              | （未设置）                         | 启用 Git 分支对比功能，指向本地仓库路径     |
-| `GIT_TIMEOUT`            | `30`                              | `git` 子命令的超时时间（秒）                |
 | `REVIEW_GIT_REMOTE_ENABLED` | `true`                         | 启用「用户自助输入远程仓库 URL」功能         |
 | `REMOTE_GIT_ALLOWED_HOSTS` | `github.com,gitlab.com,…`        | 逗号分隔的允许 host 白名单（带 `.` 前缀表示子域匹配） |
 | `REMOTE_GIT_CLONE_TIMEOUT` | `300`                            | 克隆 / fetch 单次超时（秒）                  |
@@ -124,25 +122,19 @@ VITE_API_BASE=https://reviews.example.com/api npm run build
 |--------|-----------------------------------|--------------------------------------------|
 | GET    | `/api/health`                     | 健康检查 + 当前启用的引擎                   |
 | GET    | `/api/config`                     | 公共配置（评审维度、限制、模型）             |
-| POST   | `/api/diff/parse`                 | 解析 unified diff，按文件返回               |
 | POST   | `/api/review`                     | 提交评审请求，返回评审 ID                   |
 | GET    | `/api/reviews`                    | 列出历史评审（分页）                         |
 | GET    | `/api/reviews/{id}`               | 获取单条评审及结果                           |
 | DELETE | `/api/reviews/{id}`               | 删除一条评审                                |
 | GET    | `/api/reviews/{id}/events`        | SSE 流：`status` / `findings` / `summary` / `done` |
-| POST   | `/api/upload`                     | 上传单个文件（返回 `CodeFile`）             |
-| GET    | `/api/git/status`                 | Git 仓库信息（HEAD、默认分支、是否有未提交改动）|
-| GET    | `/api/git/branches`               | 列出本地分支                                 |
-| GET    | `/api/git/tags`                   | 列出本地 Tag                                 |
-| POST   | `/api/git/diff`                   | 对比两个分支 / 引用，返回解析后的文件列表     |
 | POST   | `/api/git/remote/clone`           | 克隆或 fetch 一个用户提供的远程仓库          |
 | GET    | `/api/git/remote`                 | 列出已缓存的远程仓库（按最近使用排序）       |
 | GET    | `/api/git/remote/{id}`            | 查询某个远程仓库的 head / branches / tags    |
 | POST   | `/api/git/remote/{id}/diff`       | 对远程仓库上的两个 ref 计算 diff              |
 | DELETE | `/api/git/remote/{id}`            | 清理某个远程仓库缓存                          |
 
-> 本地 Git 接口仅在设置了 `REPO_PATH` 时返回有效响应；远程 Git 接口仅在
-> `REVIEW_GIT_REMOTE_ENABLED=true` 时启用，且全部走 `REVIEW_API_KEY` 鉴权。
+> 远程 Git 接口仅在 `REVIEW_GIT_REMOTE_ENABLED=true` 时启用，且全部走
+> `REVIEW_API_KEY` 鉴权。
 
 ### SSE 事件格式
 
@@ -190,29 +182,12 @@ JS `eval` / `innerHTML` / `dangerouslySetInnerHTML`、`pdb.set_trace`、
 
 | 变量 | 默认 | 说明 |
 | --- | --- | --- |
-| `REVIEW_API_KEY` | 空 | 留空则关闭鉴权。设置后，写接口（`/api/review`、`/api/upload`、`/api/reviews/{id}/cancel`、`/api/reviews/{id}/rerun`）需要 `Authorization: Bearer <key>`。读接口（`/api/reviews`、`/api/reviews/{id}`、`/api/reviews/{id}/events`）仍然公开。 |
+| `REVIEW_API_KEY` | 空 | 留空则关闭鉴权。设置后，写接口（`/api/review`、`/api/reviews/{id}/cancel`、`/api/reviews/{id}/rerun`、`/api/git/remote/*`）需要 `Authorization: Bearer <key>`。读接口（`/api/reviews`、`/api/reviews/{id}`、`/api/reviews/{id}/events`）仍然公开。 |
 | `REVIEW_RATE_LIMIT_PER_MIN` | `20` | 每个调用方（按 Bearer token 前 8 位或客户端 IP）在 60 秒内最多可发起的写请求数。设为 `0` 关闭限流。 |
 | `REVIEW_ID_LENGTH` | `16` | 评审 ID 的十六进制长度（`uuid4().hex[:N]`），`12` 仍可工作但会随着提交数增加而撞库概率上升。 |
 
 每个评审的 SSE 事件在每个 `text_delta` 到达时就尝试剥离一个完整的
 finding 对象并立即推送给前端，不再等整段回复结束。
-
-## Git 分支对比
-
-设置 `REPO_PATH` 指向一个本地 Git 仓库后，前端会显示第三个标签页
-"分支对比"。可以选择 base / head 引用（分支、Tag 或 commit-ish），
-可选地添加路径过滤；点击"预览 diff"会调用 `/api/git/diff` 返回受
-影响文件列表及 `--stat` 摘要，确认后即可直接发起评审。
-
-实现细节：
-
-* 使用 `git diff base...head` 三点形式，自动对齐到 merge-base，与
-  实际合并时的 diff 一致。
-* 通过 `-M -C` 启用重命名 / 复制检测，重命名的文件会作为单个文件、
-  带有连贯的 diff 返回。
-* 自动跳过二进制文件（`Binary files ... differ` 整块从输出中剥离）。
-* 引用名通过白名单正则校验，禁止 `..`、`--`、前导 `-`、空白等，
-  避免任何 shell 注入的可能。
 
 ## 远程 Git 仓库（自服务）
 
@@ -230,8 +205,8 @@ finding 对象并立即推送给前端，不再等整段回复结束。
    克隆完成后列出全部分支与 HEAD。
 3. **选 base / head** —— 直接复用 RefPicker，从 `refs/remotes/origin/*`
    拉出分支列表。
-4. **预览 diff** —— 调 `POST /api/git/remote/{id}/diff`，复用与本地
-   Git 模式相同的 `git_diff.diff_refs` 路径。
+4. **预览 diff** —— 调 `POST /api/git/remote/{id}/diff`，由
+   `git_diff.diff_refs` 路径直接复用，输出按文件的解析后内容。
 5. **Run review** —— 评审请求带 `source: "remote:<name>"` 标签，
    历史列表会显示 `remote` 徽章以便区分来源。
 
@@ -325,7 +300,8 @@ codereview/
 │   ├── config.py            # 环境变量驱动的配置
 │   ├── models.py            # Pydantic 模型（带 OpenAPI description / example）
 │   ├── diff_parser.py       # unified diff → CodeFile
-│   ├── git_diff.py          # Git 分支对比（list / diff / 校验）
+│   ├── git_diff.py          # git diff 辅助（仅 diff_refs，给远程仓库流程用）
+│   ├── git_remote.py        # 远程仓库 URL 缓存 + 校验 + 清理
 │   ├── reviewer/
 │   │   ├── __init__.py      # Claude + Mock 评审引擎
 │   │   └── rules.py         # Mock 规则表（含预编译正则）
@@ -340,7 +316,7 @@ codereview/
 │       ├── test_diff_parser.py
 │       ├── test_reviewer.py
 │       ├── test_streaming.py
-│       ├── test_git_diff.py
+│       ├── test_git_remote.py
 │       ├── test_auth_and_rate.py
 │       └── test_persistence.py
 └── frontend/
@@ -355,7 +331,7 @@ codereview/
         ├── style.css
         ├── components/
         │   ├── Header.vue
-        │   ├── InputPanel.vue          # 粘贴代码 / diff / 上传 / 分支对比
+        │   ├── InputPanel.vue          # 远程仓库 URL + 分支选择
         │   ├── RefPicker.vue           # 分支 / Tag 选择器（defineAsyncComponent 懒加载）
         │   ├── ReviewPanel.vue         # 评审结果 + 代码预览
         │   ├── SummaryCard.vue         # 严重程度统计、筛选、骨架占位
@@ -363,6 +339,9 @@ codereview/
         │   ├── CodeView.vue
         │   ├── SeverityBadge.vue
         │   ├── CategoryBadge.vue
+        │   ├── ReviewTree.vue          # I7 文件树
+        │   ├── ReviewTreeFolder.vue
+        │   ├── ReviewTreeHeader.vue
         │   └── HistoryList.vue
         ├── composables/
         │   ├── useConfig.js
